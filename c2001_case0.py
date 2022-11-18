@@ -31,8 +31,11 @@ basis = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=
 s2_basis = basis.S2_basis()
 V = basis.volume
 
+bk1 = basis.clone_with(k=1)
+bk2 = basis.clone_with(k=2)
+
 # Fields
-p = dist.Field(name='p', bases=basis)
+p = dist.Field(name='p', bases=bk1)
 T = dist.Field(name='T', bases=basis)
 u = dist.VectorField(coords, name='u', bases=basis)
 tau_p = dist.Field(name='tau_p')
@@ -43,13 +46,11 @@ tau_u2 = dist.VectorField(coords, name='tau_u2', bases=s2_basis)
 
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
-bk1 = basis.clone_with(k=1)
+
 ez = dist.VectorField(coords, bases=bk1)
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
 f = (2*ez/Ekman).evaluate()
-
-bk2 = basis.clone_with(k=2)
 
 rvec = dist.VectorField(coords, bases=bk2.radial_basis)
 rvec['g'][2] = r/Ro
