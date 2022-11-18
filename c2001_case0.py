@@ -49,11 +49,12 @@ ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
 f = (2*ez/Ekman).evaluate()
 
-rvec = dist.VectorField(coords, bases=basis.radial_basis)
+bk2 = basis.clone_with(k=2)
+
+rvec = dist.VectorField(coords, bases=bk2.radial_basis)
 rvec['g'][2] = r/Ro
-#lift_basis = basis.derivative_basis(1)
-lift_basis = basis.clone_with(k=2)
-lift = lambda A, n: d3.Lift(A, lift_basis, n)
+
+lift = lambda A, n: d3.Lift(A, bk2, n)
 
 # Problem
 problem = d3.IVP([p, T, u, tau_p, tau_T1, tau_T2, tau_u1, tau_u2], namespace=locals())
