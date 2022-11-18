@@ -50,16 +50,15 @@ f = 2*ez/Ekman
 
 rvec = dist.VectorField(coords, bases=basis.radial_basis)
 rvec['g'][2] = r/Ro
-lift_basis = basis.derivative_basis(1)
-lift = lambda A: d3.Lift(A, lift_basis, -1)
-grad_u = d3.grad(u) + rvec*lift(tau_u1) # First-order reduction
-grad_T = d3.grad(T) + rvec*lift(tau_T1) # First-order reduction
+#lift_basis = basis.derivative_basis(1)
+lift_basis = basis.clone_with(k=2)
+lift = lambda A, n: d3.Lift(A, lift_basis, n)
 
 # Problem
 problem = d3.IVP([p, T, u, tau_p, tau_T1, tau_T2, tau_u1, tau_u2], namespace=locals())
-problem.add_equation("trace(grad_u) + tau_p = 0")
-problem.add_equation("dt(T) - div(grad_T)/Prandtl + lift(tau_T2) = - (u@grad(T))")
-problem.add_equation("dt(u) - div(grad_u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + lift(tau_u2) = cross(u, curl(u) + f)")
+problem.add_equation("div(u) + tau_p = 0")
+problem.add_equation("dt(T) - lap(T)/Prandtl + lift(tau_T1, -1) + lift(tau_T2, -2) = - (u@grad(T))")
+problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + lift(tau_u1, -1) + lift(tau_u2, -2) = cross(u, curl(u) + f)")
 problem.add_equation("T(r=Ri) = 1")
 problem.add_equation("u(r=Ri) = 0")
 problem.add_equation("T(r=Ro) = 0")
