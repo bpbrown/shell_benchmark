@@ -1,6 +1,16 @@
 """
 Dedalus script for shell boussinesq convection,
 based on Christensen et al 2001 convective benchmark case 0.
+
+Usage:
+    c2001_case0.py [options]
+
+Options:
+
+    --niter=<niter>         How many iterations to run for
+    --Ntheta=<Ntheta>       Latitude coeffs [default: 128]
+    --Nr=<Nr>               Radial coeffs  [default: 128]
+    --mesh=<mesh>           Processor mesh for 3-D runs
 """
 
 import numpy as np
@@ -8,19 +18,35 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
+from mpi4py import MPI
+ncpu = MPI.COMM_WORLD.size
+
+from docopt import docopt
+args = docopt(__doc__)
+
+mesh = args['--mesh']
+if mesh is not None:
+    mesh = mesh.split(',')
+    mesh = [int(mesh[0]), int(mesh[1])]
+else:
+    log2 = np.log2(ncpu)
+    if log2 == int(log2):
+        mesh = [int(2**np.ceil(log2/2)),int(2**np.floor(log2/2))]
+    logger.info("running on processor mesh={}".format(mesh))
+
+
 # parameters
 Ekman = 1e-3
 Prandtl = 1
 Rayleigh = 100
 Ri = 7/13
 Ro = 20/13
-Nr = 128
-Lmax = 127 #63
-Ntheta = Lmax + 1
+Nr = int(args['--Nr'])
+Ntheta = int(args['--Ntheta'])
 Nphi = 2*Ntheta
-stop_sim_time = 10 #1.25
+stop_sim_time = 10
+
 timestepper = d3.RK222
-mesh = [16, 16]
 dealias = 3/2
 dtype = np.float64
 
@@ -73,7 +99,9 @@ solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
 # for testing
-solver.stop_iteration = 100
+if args['--niter']:
+    solver.stop_iteration = int(float(args['--niter']))
+
 # Initial conditions
 A = 0.1
 x = 2*r-Ri-Ro
