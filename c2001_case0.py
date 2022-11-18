@@ -43,10 +43,11 @@ tau_u2 = dist.VectorField(coords, name='tau_u2', bases=s2_basis)
 
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
-ez = dist.VectorField(coords, bases=basis)
+bk1 = basis.clone_with(k=1)
+ez = dist.VectorField(coords, bases=bk1)
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
-f = 2*ez/Ekman
+f = (2*ez/Ekman).evaluate()
 
 rvec = dist.VectorField(coords, bases=basis.radial_basis)
 rvec['g'][2] = r/Ro
@@ -57,7 +58,7 @@ lift = lambda A, n: d3.Lift(A, lift_basis, n)
 # Problem
 problem = d3.IVP([p, T, u, tau_p, tau_T1, tau_T2, tau_u1, tau_u2], namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
-problem.add_equation("dt(T) - lap(T)/Prandtl + lift(tau_T1, -1) + lift(tau_T2, -2) = - (u@grad(T))")
+problem.add_equation("dt(T) - lap(T)/Prandtl + lift(tau_T1, -1) + lift(tau_T2, -2) = -(u@grad(T))")
 problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + lift(tau_u1, -1) + lift(tau_u2, -2) = cross(u, curl(u) + f)")
 problem.add_equation("T(r=Ri) = 1")
 problem.add_equation("u(r=Ri) = 0")
