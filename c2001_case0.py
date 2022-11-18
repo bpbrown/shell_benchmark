@@ -46,8 +46,8 @@ phi, theta, r = dist.local_grids(basis)
 ez = dist.VectorField(coords, bases=basis)
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
-f = d3.Grid(2*ez/Ekman)
-#f = 2*ez/Ekman
+f = 2*ez/Ekman
+
 rvec = dist.VectorField(coords, bases=basis.radial_basis)
 rvec['g'][2] = r/Ro
 lift_basis = basis.derivative_basis(1)
