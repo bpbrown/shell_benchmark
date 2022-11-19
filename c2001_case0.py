@@ -96,14 +96,18 @@ ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
 f = (2*ez/Ekman).evaluate()
 
+er = dist.VectorField(coords, bases=bk1.radial_basis)
+er['g'][2] = 1
+
 rvec = dist.VectorField(coords, bases=bk2.radial_basis)
 rvec['g'][2] = r/Ro
 
+lift1 = lambda A, n: de.Lift(A, bk1, n)
 lift = lambda A, n: de.Lift(A, bk2, n)
 
 # Problem
 problem = de.IVP([p, T, u, τ_p, τ_T1, τ_T2, τ_u1, τ_u2], namespace=locals())
-problem.add_equation("div(u) + τ_p = 0")
+problem.add_equation("div(u) + τ_p + lift1(τ_u2,-1)@er = 0")
 problem.add_equation("dt(T) - lap(T)/Prandtl + lift(τ_T1, -1) + lift(τ_T2, -2) = -(u@grad(T))")
 problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, curl(u) + f)")
 problem.add_equation("T(r=Ri) = 1")
