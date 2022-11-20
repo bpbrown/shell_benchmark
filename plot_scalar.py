@@ -56,12 +56,11 @@ for ax in ax_E:
     if subrange:
         ax.set_xlim(t_min,t_max)
     ax.set_xlabel('time')
-    ax.set_ylabel('energy density')
-    ax.legend(loc='lower left')
+ax_E[0].set_ylabel('energy density')
+ax_E[1].set_ylabel(r'|E - E(t=t$_f$)|')
+ax_E[1].legend(loc='lower left')
+ax_E[1].set_yscale('log')
 fig_E.savefig('{:s}/energies.pdf'.format(str(output_path)))
-for ax in ax_E:
-    ax.set_yscale('log')
-fig_E.savefig('{:s}/log_energies.pdf'.format(str(output_path)))
 
 fig_tau, ax_tau = plt.subplots(nrows=2)
 for i in range(2):
@@ -112,7 +111,7 @@ fig_tau.savefig('{:s}/tau_error.pdf'.format(str(output_path)))
 #
 # fig_f.savefig('{:s}/Re_and_Ro.pdf'.format(str(output_path)))
 
-benchmark_set = ['KE']
+benchmark_set = ['KE', 'τ_u1', 'τ_u2', 'τ_T1', 'τ_T2', 'τ_p']
 
 i_ten = int(0.9*data[benchmark_set[0]].shape[0])
 print("benchmark values")

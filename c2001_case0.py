@@ -185,7 +185,7 @@ try:
             max_Re = flow.max('Re')
             max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_T1|'), flow.max('|τ_T2|'), flow.max('|τ_p|')])
 
-            logger.info('Iteration={:d}, Time={:e}, dt={:e}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, max_Re, max_τ))
+            logger.info('Iteration={:d}, Time={:.4e}, dt={:.2e}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, max_Re, max_τ))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
