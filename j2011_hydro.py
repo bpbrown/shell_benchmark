@@ -57,8 +57,20 @@ timestepper = de.SBDF4
 dealias = 3/2
 dtype = np.float64
 
-Ro = 1/(1-beta)
-Ri = Ro - 1
+data_dir = sys.argv[0].split('.py')[0]
+data_dir += '_Th{}_R{}'.format(args['--Ntheta'], args['--Nr'])
+if args['--max_dt']:
+    data_dir += '_dt{}'.format(args['--max_dt'])
+
+if args['--label']:
+    data_dir += '_{:s}'.format(args['--label'])
+logger.info("saving data in {}".format(data_dir))
+
+import dedalus.tools.logging as dedalus_logging
+dedalus_logging.add_file_handler(data_dir+'/logs/dedalus_log', 'DEBUG')
+
+Ro = r_outer = 1/(1-beta)
+Ri = r_inner = Ro - 1
 
 zeta_out = (beta + 1) / ( beta*np.exp(Nrho/n) + 1 )
 zeta_in  = (1 + beta - zeta_out) / beta
@@ -70,6 +82,9 @@ Di = c1*Prandtl/Rayleigh
 coords = de.SphericalCoordinates('phi', 'theta', 'r')
 dist = de.Distributor(coords, dtype=dtype, mesh=mesh)
 basis = de.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+basis_ncc = de.ShellBasis(coords, shape=(1, 1, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+b_inner = basis.S2_basis(radius=r_inner)
+b_outer = basis.S2_basis(radius=r_outer)
 s2_basis = basis.S2_basis()
 V = basis.volume
 
@@ -78,10 +93,19 @@ u = dist.VectorField(coords, name='u', bases=basis)
 p = dist.Field(name='p', bases=basis)
 S = dist.Field(name='S', bases=basis)
 τ_p = dist.Field(name='τ_p')
-τ_S1 = dist.Field(name='τ_T1', bases=s2_basis)
-τ_S2 = dist.Field(name='τ_T2', bases=s2_basis)
-τ_u1 = dist.VectorField(coords, name='τ_u1', bases=s2_basis)
-τ_u2 = dist.VectorField(coords, name='τ_u2', bases=s2_basis)
+τ_S1 = dist.Field(name='τ_T1', bases=b_outer)
+τ_S2 = dist.Field(name='τ_T2', bases=b_inner)
+τ_u1 = dist.VectorField(coords, name='τ_u1', bases=b_outer)
+τ_u2 = dist.VectorField(coords, name='τ_u2', bases=b_inner)
+
+grad = lambda A: de.Gradient(A, coords)
+div = lambda A: de.Divergence(A)
+dot = lambda A, B: de.DotProduct(A, B)
+cross = lambda A, B: de.CrossProduct(A, B)
+trans = lambda A: de.TransposeComponents(A)
+trace = lambda A: de.Trace(A)
+radial = lambda A: de.RadialComponent(A)
+angular = lambda A: de.AngularComponent(A, index=1)
 
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
@@ -96,42 +120,51 @@ ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
 f = de.Grid(2*ez/Ekman)
 omega = de.curl(u)
-g = dist.VectorField(coords, bases=basis.radial_basis)
+g = dist.VectorField(coords, bases=basis_ncc)
 g['g'][2] = 1/r**2
-rvec = dist.VectorField(coords, bases=basis.radial_basis)
+rvec = dist.VectorField(coords, bases=basis_ncc)
 rvec['g'][2] = r
-zeta = dist.Field(bases=basis.radial_basis)
+zeta = dist.Field(bases=basis_ncc)
 zeta['g'] = c0 + c1/r
-rho0 = zeta**n
-p0 = zeta**(n+1)
-grad_log_rho0 = de.grad(np.log(rho0))
-grad_log_p0 = de.grad(np.log(p0))
+
+rho0 = (zeta**n).evaluate()
+p0 = (zeta**(n+1)).evaluate()
+grad_log_rho0 = de.grad(np.log(rho0)).evaluate()
+grad_log_p0 = de.grad(np.log(p0)).evaluate()
+
 lift_basis = basis.clone_with(k=1)
+lift = lambda A, n: de.Lift(A, lift_basis, n)
 
+e = grad(u) + trans(grad(u))
+e.store_last = True
+viscous_terms = div(e) + dot(grad_log_rho0, e) - 2/3*grad(div(u)) - 2/3*grad_log_rho0*div(u)
 
-lift = lambda A: de.Lift(A, lift_basis, -1)
-grad_u = de.grad(u) + rvec*lift(τ_u1) # First-order reduction
-grad_S = de.grad(S) + rvec*lift(τ_S1) # First-order reduction
-#stress = rho0*(grad_u + de.trans(grad_u))
-I = dist.TensorField(coords, name='I', bases=basis.radial_basis)
-for i in range(3):
-    I['g'][i,i] = 1
-stress = grad_u + de.trans(grad_u) - 2/3*de.trace(grad_u)*I
-strain = 1/2*(de.grad(u) + de.trans(de.grad(u)))
-viscous_heating = 2*(de.trace(strain @ strain) - 1/3*de.div(u)**2)
+trace_e = trace(e)
+trace_e.store_last = True
+Phi = trace(dot(e, e)) - 1/3*(trace_e*trace_e)
+
+u_r_inner = radial(u(r=r_inner))
+u_r_outer = radial(u(r=r_outer))
+u_perp_inner = radial(angular(e(r=r_inner)))
+u_perp_outer = radial(angular(e(r=r_outer)))
+
 zetag = de.Grid(zeta)
+
+viscous_heating = Phi
+
+Di_zetainv_g = de.Grid((Di/2)*1/zeta)
 
 # Problem
 problem = de.IVP([p, S, u, τ_p, τ_S1, τ_S2, τ_u1, τ_u2], namespace=locals())
-problem.add_equation("trace(grad_u) + u@grad_log_rho0 + τ_p = 0")
-problem.add_equation("dt(u) + grad(p) - (div(stress) + stress@grad_log_rho0) - Rayleigh/Prandtl*S*g + lift(τ_u2) = cross(u, omega + f)")
-problem.add_equation("dt(S) - (div(grad_S) + grad_S@grad_log_p0)/Prandtl + lift(τ_S2) = - (u@grad(S)) + Di/zetag*viscous_heating")
+problem.add_equation("div(u) + u@grad_log_rho0 + τ_p = 0")
+problem.add_equation("dt(u) + grad(p) - viscous_terms - Rayleigh/Prandtl*S*g + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, omega + f)")
+problem.add_equation("dt(S) - (lap(S) + grad(S)@grad_log_p0)/Prandtl + lift(τ_S1, -1) + lift(τ_S2, -2) = - (u@grad(S)) + Di_zetainv_g*Phi")
 problem.add_equation("S(r=Ri) = 1")
-problem.add_equation("radial(u(r=Ri)) = 0")
-problem.add_equation("angular(radial(strain(r=Ri), index=1)) = 0")
+problem.add_equation("u_r_inner = 0")
+problem.add_equation("u_perp_inner = 0")
 problem.add_equation("S(r=Ro) = 0")
-problem.add_equation("radial(u(r=Ro)) = 0")
-problem.add_equation("angular(radial(strain(r=Ro), index=1)) = 0")
+problem.add_equation("u_r_outer = 0")
+problem.add_equation("u_perp_outer = 0")
 problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
@@ -150,8 +183,6 @@ S['g'] += (zeta_out**(-2) - (c0 + c1/r)**(-2)) / (zeta_out**(-2) - zeta_in**(-2)
 # Analysis
 out_cadence = 1e-2
 
-dot = lambda A, B: de.DotProduct(A, B)
-cross = lambda A, B: de.CrossProduct(A, B)
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
 
@@ -175,8 +206,8 @@ sphere_integ = lambda A: de.Average(A, coords.S2coordsys)*4*np.pi
 traces.add_task(-1/Prandtl*zeta_out**(n+1)*Ro**2*sphere_integ(de.radial(de.grad(S)(r=Ro))), name='Luminosity')
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=out_cadence, max_writes=None)
 traces.add_task(np.abs(τ_p), name='τ_p')
-traces.add_task(shellavg(np.abs(τ_T1)), name='τ_T1')
-traces.add_task(shellavg(np.abs(τ_T2)), name='τ_T2')
+traces.add_task(shellavg(np.abs(τ_S1)), name='τ_S1')
+traces.add_task(shellavg(np.abs(τ_S2)), name='τ_S2')
 traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
 traces.add_task(shellavg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
 #traces.add_task(volavg(Lz), name='Lz')
