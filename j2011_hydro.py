@@ -110,14 +110,17 @@ angular = lambda A: de.AngularComponent(A, index=1)
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
 ex = dist.VectorField(coords, bases=basis)
-ex['g'][2] = np.cos(theta)
-ex['g'][1] = -np.sin(theta)
+ex['g'][2] = np.sin(theta)*np.cos(phi)
+ex['g'][1] = np.cos(theta)*np.cos(phi)
+ex['g'][0] = -np.sin(phi)
 ey = dist.VectorField(coords, bases=basis)
-ey['g'][2] = np.cos(theta)
-ey['g'][1] = -np.sin(theta)
+ey['g'][2] = np.sin(theta)*np.sin(phi)
+ey['g'][1] = np.cos(theta)*np.sin(phi)
+ey['g'][0] = np.cos(phi)
 ez = dist.VectorField(coords, bases=basis)
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
+
 f = de.Grid(2*ez/Ekman)
 omega = de.curl(u)
 g = dist.VectorField(coords, bases=basis_ncc)
@@ -128,12 +131,19 @@ zeta = dist.Field(bases=basis_ncc)
 zeta['g'] = c0 + c1/r
 
 rho0 = (zeta**n).evaluate()
+rho0.name='ρ0'
 p0 = (zeta**(n+1)).evaluate()
+p0.name='p0'
 grad_log_rho0 = de.grad(np.log(rho0)).evaluate()
+grad_log_rho0.name='grad_ln_ρ0'
 grad_log_p0 = de.grad(np.log(p0)).evaluate()
+grad_log_p0.name='grad_ln_p0'
 
-lift_basis = basis.clone_with(k=1)
-lift = lambda A, n: de.Lift(A, lift_basis, n)
+
+bk1 = basis.clone_with(k=1)
+bk2 = basis.clone_with(k=2)
+lift1 = lambda A, n: de.Lift(A, bk1, n)
+lift = lambda A, n: de.Lift(A, bk2, n)
 
 e = grad(u) + trans(grad(u))
 e.store_last = True
@@ -172,12 +182,12 @@ solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
-# Copied from Rayleigh, which itself seems to have been copied from Mark (Meish?) implementation in ASH
+# Copied from Rayleigh, which itself seems to have been copied from Mark Miesch's implementation in ASH
 amp = 0.1
 norm = 2*np.pi/(Ro - Ri)
 S['g'] = amp*(1 - np.cos(norm*(r-Ri)))*np.sin(19*theta)*np.sin(19*phi)
 S['g'] += 0.1*amp*(1 - np.cos(norm*(r-Ri)))*np.sin(theta)*np.sin(phi)
-zeta.change_scales((1, 1, 1))
+zeta.change_scales(1)
 S['g'] += (zeta_out**(-2) - (c0 + c1/r)**(-2)) / (zeta_out**(-2) - zeta_in**(-2))
 
 # Analysis
@@ -186,25 +196,27 @@ out_cadence = 1e-2
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
 
-snapshots = solver.evaluator.add_file_handler('slices', sim_dt=out_cadence, max_writes=10)
+snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=out_cadence, max_writes=10)
 snapshots.add_task(S(r=Ro), scales=dealias, name='S_r_outer')
 snapshots.add_task(S(r=Ri), scales=dealias, name='S_r_inner')
 snapshots.add_task(S(r=(Ri+Ro)/2), scales=dealias, name='S_r_mid')
 snapshots.add_task(S(phi=0), scales=dealias, name='S_phi_start')
 snapshots.add_task(S(phi=3*np.pi/2), scales=dealias, name='S_phi_end')
 
-profiles = solver.evaluator.add_file_handler('profiles', sim_dt=out_cadence, max_writes=100)
+profiles = solver.evaluator.add_file_handler(data_dir+'/profiles', sim_dt=out_cadence, max_writes=100)
 profiles.add_task(u(r=(Ri+Ro)/2,theta=np.pi/2), name='u_profile')
 profiles.add_task(S(r=(Ri+Ro)/2,theta=np.pi/2), name='S_profile')
 
-traces = solver.evaluator.add_file_handler('traces', sim_dt=1e-3, max_writes=None)
-traces.add_task(0.5*de.integ(rho0*u@u), name='KE')
-traces.add_task(de.integ(rho0*de.cross(rvec,u)@ex), name='Lx')
-traces.add_task(de.integ(rho0*de.cross(rvec,u)@ey), name='Ly')
-traces.add_task(de.integ(rho0*de.cross(rvec,u)@ez), name='Lz')
 sphere_integ = lambda A: de.Average(A, coords.S2coordsys)*4*np.pi
+L = rho0*cross(rvec,u)
+
+traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=1e-3, max_writes=None)
+traces.add_task(0.5*de.integ(rho0*u@u), name='KE')
+traces.add_task(de.integ(L@ex), name='Lx')
+traces.add_task(de.integ(L@ey), name='Ly')
+traces.add_task(de.integ(L@ez), name='Lz')
 traces.add_task(-1/Prandtl*zeta_out**(n+1)*Ro**2*sphere_integ(de.radial(de.grad(S)(r=Ro))), name='Luminosity')
-traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=out_cadence, max_writes=None)
+
 traces.add_task(np.abs(τ_p), name='τ_p')
 traces.add_task(shellavg(np.abs(τ_S1)), name='τ_S1')
 traces.add_task(shellavg(np.abs(τ_S2)), name='τ_S2')
@@ -223,19 +235,27 @@ CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
+report_cadence = 10
 # Flow properties
-flow = de.GlobalFlowProperty(solver, cadence=1)
+flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
+flow.add_property(np.abs(τ_p), name='|τ_p|')
+flow.add_property(np.abs(τ_S1), name='|τ_S1|')
+flow.add_property(np.abs(τ_S2), name='|τ_S2|')
+flow.add_property(np.sqrt(dot(τ_u1,τ_u1)), name='|τ_u1|')
+flow.add_property(np.sqrt(dot(τ_u2,τ_u2)), name='|τ_u2|')
 
 # Main loop
 try:
     logger.info('Starting main loop')
     while solver.proceed:
-        timestep = CFL.compute_timestep()
-        solver.step(timestep)
-        if (solver.iteration-1) % 1 == 0:
+        Δt = CFL.compute_timestep()
+        solver.step(Δt)
+        if solver.iteration > 0 and solver.iteration % report_cadence == 0:
             max_Re = flow.max('Re')
-            logger.info('Iteration=%i, Time=%e, dt=%e, max(Re)=%f' %(solver.iteration, solver.sim_time, timestep, max_Re))
+            max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_S1|'), flow.max('|τ_S2|'), flow.max('|τ_p|')])
+
+            logger.info('Iteration={:d}, Time={:.4e}, dt={:.2e}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, max_Re, max_τ))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
