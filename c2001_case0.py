@@ -93,7 +93,14 @@ u = dist.VectorField(coords, name='u', bases=basis)
 
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
-
+ex = dist.VectorField(coords, bases=basis, name='ex')
+ex['g'][2] = np.sin(theta)*np.cos(phi)
+ex['g'][1] = np.cos(theta)*np.cos(phi)
+ex['g'][0] = -np.sin(phi)
+ey = dist.VectorField(coords, bases=basis, name='ey')
+ey['g'][2] = np.sin(theta)*np.sin(phi)
+ey['g'][1] = np.cos(theta)*np.sin(phi)
+ey['g'][0] = np.cos(phi)
 ez = dist.VectorField(coords, bases=bk1, name='ez')
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
@@ -138,10 +145,13 @@ out_cadence = 1e-2
 
 dot = lambda A, B: de.DotProduct(A, B)
 cross = lambda A, B: de.CrossProduct(A, B)
+curl = lambda A: de.Curl(A)
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
+integ = lambda A: de.integ(A)
 
-Lz = dot(cross(rvec, u), ez)
+L = cross(rvec, u)
+ω = curl(u)*Ekman/2
 
 snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=1e-1, max_writes=10)
 snapshots.add_task(T(r=Ro), scales=dealias, name='T_r_outer')
@@ -156,12 +166,16 @@ profiles.add_task(T(r=(Ri+Ro)/2,theta=np.pi/2), name='T_profile')
 
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=out_cadence, max_writes=None)
 traces.add_task(0.5*volavg(u@u), name='KE')
+traces.add_task(np.sqrt(volavg(u@u)), name='Re')
+traces.add_task(np.sqrt(volavg(ω@ω)), name='Ro')
 traces.add_task(np.abs(τ_p), name='τ_p')
 traces.add_task(shellavg(np.abs(τ_T1)), name='τ_T1')
 traces.add_task(shellavg(np.abs(τ_T2)), name='τ_T2')
 traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
 traces.add_task(shellavg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
-traces.add_task(volavg(Lz), name='Lz')
+traces.add_task(integ(dot(L,ex)), name='Lx')
+traces.add_task(integ(dot(L,ey)), name='Ly')
+traces.add_task(integ(dot(L,ez)), name='Lz')
 
 # CFL
 if args['--max_dt']:
@@ -176,6 +190,7 @@ CFL.add_velocity(u)
 # Flow properties
 flow = de.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(np.sqrt(u@u), name='Re')
+flow.add_property(np.sqrt(ω@ω), name='Ro')
 flow.add_property(np.abs(τ_p), name='|τ_p|')
 flow.add_property(np.abs(τ_T1), name='|τ_T1|')
 flow.add_property(np.abs(τ_T2), name='|τ_T2|')
@@ -191,9 +206,10 @@ try:
         solver.step(Δt)
         if solver.iteration > 0 and solver.iteration % report_cadence == 0:
             max_Re = flow.max('Re')
+            avg_Ro = flow.grid_average('Ro')
             max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_T1|'), flow.max('|τ_T2|'), flow.max('|τ_p|')])
 
-            logger.info('Iteration={:d}, Time={:.4e}, dt={:.2e}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, max_Re, max_τ))
+            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, max_τ))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise

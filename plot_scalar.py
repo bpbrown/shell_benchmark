@@ -64,6 +64,7 @@ ax_E[1].set_ylabel(r'|E - E(t=t$_f$)|')
 ax_E[1].legend(loc='lower left')
 ax_E[1].set_yscale('log')
 fig_E.savefig('{:s}/energies.pdf'.format(str(output_path)))
+fig_E.savefig('{:s}/energies.png'.format(str(output_path)), dpi=300)
 
 fig_tau, ax_tau = plt.subplots(nrows=2, sharex=True)
 for i in range(2):
@@ -87,45 +88,46 @@ ax_tau[1].set_yscale('log')
 ylims = ax_tau[1].get_ylim()
 ax_tau[1].set_ylim(max(1e-14, ylims[0]), ylims[1])
 fig_tau.savefig('{:s}/tau_error.pdf'.format(str(output_path)))
+fig_tau.savefig('{:s}/tau_error.png'.format(str(output_path)), dpi=300)
 
-if 'Lz' in data:
-    fig_L, ax_L = plt.subplots(nrows=2, sharex=True)
-    ax_L[0].plot(t, data['Lx'], label='Lx')
-    ax_L[0].plot(t, data['Ly'], label='Ly')
-    ax_L[0].plot(t, data['Lz'], label='Lz')
-    ax_L[1].plot(t, np.abs(data['Lx']), label='Lx')
-    ax_L[1].plot(t, np.abs(data['Ly']), label='Ly')
-    ax_L[1].plot(t, np.abs(data['Lz']), label='Lz')
+fig_L, ax_L = plt.subplots(nrows=2, sharex=True)
+ax_L[0].plot(t, data['Lx'], label='Lx')
+ax_L[0].plot(t, data['Ly'], label='Ly')
+ax_L[0].plot(t, data['Lz'], label='Lz')
+ax_L[1].plot(t, np.abs(data['Lx']), label='Lx')
+ax_L[1].plot(t, np.abs(data['Ly']), label='Ly')
+ax_L[1].plot(t, np.abs(data['Lz']), label='Lz')
 
-    for ax in ax_L:
-        if subrange:
-            ax.set_xlim(t_min,t_max)
-        ax.set_ylabel('Angular Momentum')
-        ax.legend(loc='lower left')
-    ax_L[1].set_xlabel('time')
-    ax_L[1].set_yscale('log')
-    fig_L.savefig('{:s}/angular_momentum.pdf'.format(str(output_path)))
-#
-# fig_f, ax_f = plt.subplots(nrows=2)
-# for ax in ax_f:
-#     ax.plot(t, data['Re'], label='Re')
-#     ax_r = ax.twinx()
-#     ax_r.plot(t, data['Ro'], label='Ro', color='tab:orange')
-#     if subrange:
-#         ax.set_xlim(t_min,t_max)
-#     ax.set_xlabel('time')
-#     ax.set_ylabel('fluid parameters')
-#     ax.legend(loc='lower left')
-#
-# ax_f[1].set_yscale('log')
-# ax_r.set_yscale('log') # relies on it being the last instance; poor practice
-#
-# fig_f.savefig('{:s}/Re_and_Ro.pdf'.format(str(output_path)))
+for ax in ax_L:
+    if subrange:
+        ax.set_xlim(t_min,t_max)
+    ax.set_ylabel('Angular Momentum')
+    ax.legend(loc='lower left')
+ax_L[1].set_xlabel('time')
+ax_L[1].set_yscale('log')
+fig_L.savefig('{:s}/angular_momentum.pdf'.format(str(output_path)))
+fig_L.savefig('{:s}/angular_momentum.png'.format(str(output_path)), dpi=300)
+
+fig_f, ax_f = plt.subplots(nrows=2)
+for ax in ax_f:
+    ax.plot(t, data['Re'], label='Re')
+    ax_r = ax.twinx()
+    ax_r.plot(t, data['Ro'], label='Ro', color='tab:orange')
+    if subrange:
+        ax.set_xlim(t_min,t_max)
+    ax.set_xlabel('time')
+    ax.set_ylabel('fluid parameters')
+    ax.legend(loc='lower left')
+
+ax_f[1].set_yscale('log')
+ax_r.set_yscale('log') # relies on it being the last instance; poor practice
+fig_f.savefig('{:s}/Re_and_Ro.pdf'.format(str(output_path)))
+fig_f.savefig('{:s}/Re_and_Ro.png'.format(str(output_path)), dpi=300)
 
 if 'τ_T1' in data:
-    benchmark_set = ['KE', 'τ_u1', 'τ_u2', 'τ_T1', 'τ_T2', 'τ_p']
+    benchmark_set = ['KE', 'Ro', 'Re', 'τ_u1', 'τ_u2', 'τ_T1', 'τ_T2', 'τ_p']
 elif 'τ_S1' in data:
-    benchmark_set = ['KE', 'τ_u1', 'τ_u2', 'τ_S1', 'τ_S2', 'τ_p']
+    benchmark_set = ['KE', 'Ro', 'Re', 'τ_u1', 'τ_u2', 'τ_S1', 'τ_S2', 'τ_p']
 
 i_ten = int(0.9*data[benchmark_set[0]].shape[0])
 print("benchmark values")
