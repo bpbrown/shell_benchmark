@@ -13,7 +13,7 @@ Options:
     --mesh=<mesh>           Processor mesh for 3-D runs
 
     --max_dt=<max_dt>       Largest timestep
-    --end_time=<end_time>   End of simulation, diffusion times [default: 2.5]
+    --end_time=<end_time>   End of simulation, diffusion times [default: 3]
 
     --label=<label>         Additional label for run output directory
 """
@@ -44,8 +44,8 @@ else:
 Ekman = 1e-3
 Prandtl = 1
 Rayleigh = 100
-Ri = 7/13
-Ro = 20/13
+Ri = r_inner = 7/13
+Ro = r_outer = 20/13
 Nr = int(args['--Nr'])
 Ntheta = int(args['--Ntheta'])
 Nphi = 2*Ntheta
@@ -64,8 +64,6 @@ logger.info("saving data in {}".format(data_dir))
 import dedalus.tools.logging as dedalus_logging
 dedalus_logging.add_file_handler(data_dir+'/logs/dedalus_log', 'DEBUG')
 
-
-
 timestepper = de.SBDF4 #de.RK222
 dealias = 3/2
 dtype = np.float64
@@ -74,6 +72,9 @@ dtype = np.float64
 coords = de.SphericalCoordinates('phi', 'theta', 'r')
 dist = de.Distributor(coords, dtype=dtype, mesh=mesh)
 basis = de.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+b_inner = basis.S2_basis(radius=r_inner)
+b_outer = basis.S2_basis(radius=r_outer)
+
 s2_basis = basis.S2_basis()
 V = basis.volume
 
@@ -85,10 +86,10 @@ p = dist.Field(name='p', bases=bk1)
 T = dist.Field(name='T', bases=basis)
 u = dist.VectorField(coords, name='u', bases=basis)
 τ_p = dist.Field(name='τ_p')
-τ_T1 = dist.Field(name='τ_T1', bases=s2_basis)
-τ_T2 = dist.Field(name='τ_T2', bases=s2_basis)
-τ_u1 = dist.VectorField(coords, name='τ_u1', bases=s2_basis)
-τ_u2 = dist.VectorField(coords, name='τ_u2', bases=s2_basis)
+τ_T1 = dist.Field(name='τ_T1', bases=b_outer)
+τ_T2 = dist.Field(name='τ_T2', bases=b_inner)
+τ_u1 = dist.VectorField(coords, name='τ_u1', bases=b_outer)
+τ_u2 = dist.VectorField(coords, name='τ_u2', bases=b_inner)
 
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
@@ -136,8 +137,11 @@ T['g'] = Ri*Ro/r - Ri + 210*A/np.sqrt(17920*np.pi)*(1-3*x**2+3*x**4-x**6)*np.sin
 out_cadence = 1e-2
 
 dot = lambda A, B: de.DotProduct(A, B)
+cross = lambda A, B: de.CrossProduct(A, B)
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
+
+Lz = dot(cross(rvec, u), ez)
 
 snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=1e-1, max_writes=10)
 snapshots.add_task(T(r=Ro), scales=dealias, name='T_r_outer')
@@ -157,6 +161,7 @@ traces.add_task(shellavg(np.abs(τ_T1)), name='τ_T1')
 traces.add_task(shellavg(np.abs(τ_T2)), name='τ_T2')
 traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
 traces.add_task(shellavg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
+traces.add_task(volavg(Lz), name='Lz')
 
 # CFL
 if args['--max_dt']:
