@@ -139,6 +139,8 @@ grad_log_rho0.name='grad_ln_ρ0'
 grad_log_p0 = de.grad(np.log(p0)).evaluate()
 grad_log_p0.name='grad_ln_p0'
 
+er = dist.VectorField(coords, bases=basis.radial_basis, name='er')
+er['g'][2] = 1
 
 bk1 = basis.clone_with(k=1)
 bk2 = basis.clone_with(k=2)
@@ -166,7 +168,7 @@ Di_zetainv_g = de.Grid((Di/2)*1/zeta)
 
 # Problem
 problem = de.IVP([p, S, u, τ_p, τ_S1, τ_S2, τ_u1, τ_u2], namespace=locals())
-problem.add_equation("div(u) + u@grad_log_rho0 + τ_p = 0")
+problem.add_equation("div(u) + u@grad_log_rho0 + τ_p + lift1(τ_u2,-1)@er = 0")
 problem.add_equation("dt(u) + grad(p) - viscous_terms - Rayleigh/Prandtl*S*g + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, omega + f)")
 problem.add_equation("dt(S) - (lap(S) + grad(S)@grad_log_p0)/Prandtl + lift(τ_S1, -1) + lift(τ_S2, -2) = - (u@grad(S)) + Di_zetainv_g*Phi")
 problem.add_equation("S(r=Ri) = 1")
