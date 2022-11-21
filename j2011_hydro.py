@@ -15,6 +15,8 @@ Options:
     --max_dt=<max_dt>       Largest timestep
     --end_time=<end_time>   End of simulation, diffusion times [default: 3]
 
+    --ncc_cutoff=<ncc>      Amplitude cutoff for NCCs [default: 1e-8]
+
     --label=<label>         Additional label for run output directory
 """
 import sys
@@ -28,6 +30,8 @@ ncpu = MPI.COMM_WORLD.size
 
 from docopt import docopt
 args = docopt(__doc__)
+
+ncc_cutoff = float(args['--ncc_cutoff'])
 
 mesh = args['--mesh']
 if mesh is not None:
@@ -169,6 +173,10 @@ viscous_heating = Phi
 
 Di_zetainv_g = de.Grid((Di/2)*1/zeta)
 
+logger.info("NCC expansions:")
+for ncc in [grad_log_rho0, grad_log_p0, g]:
+    logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
+
 # Problem
 problem = de.IVP([p, S, u, τ_p, τ_S1, τ_S2, τ_u1, τ_u2], namespace=locals())
 problem.add_equation("div(u) + u@grad_log_rho0 + τ_p + lift1(τ_u2,-1)@er = 0")
@@ -183,7 +191,7 @@ problem.add_equation("u_perp_outer = 0")
 problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
-solver = problem.build_solver(timestepper)
+solver = problem.build_solver(timestepper, ncc_cutoff=ncc_cutoff)
 solver.stop_sim_time = stop_sim_time
 # for testing
 if args['--niter']:
