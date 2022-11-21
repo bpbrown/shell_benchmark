@@ -182,6 +182,10 @@ problem.add_equation("integ(p) = 0") # Pressure gauge
 # Solver
 solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
+# for testing
+if args['--niter']:
+    solver.stop_iteration = int(float(args['--niter']))
+
 
 # Initial conditions
 # Copied from Rayleigh, which itself seems to have been copied from Mark Miesch's implementation in ASH
