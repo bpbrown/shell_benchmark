@@ -107,6 +107,7 @@ S = dist.Field(name='S', bases=basis)
 
 grad = lambda A: de.Gradient(A, coords)
 div = lambda A: de.Divergence(A)
+curl = lambda A: de.Curl(A)
 dot = lambda A, B: de.DotProduct(A, B)
 cross = lambda A, B: de.CrossProduct(A, B)
 trans = lambda A: de.TransposeComponents(A)
@@ -198,11 +199,14 @@ if args['--niter']:
     solver.stop_iteration = int(float(args['--niter']))
 
 # Initial conditions
-# Copied from Rayleigh, which itself seems to have been copied from Mark Miesch's implementation in ASH
-amp = 0.1
-norm = 2*np.pi/(Ro - Ri)
-S['g'] = amp*(1 - np.cos(norm*(r-Ri)))*np.sin(19*theta)*np.sin(19*phi)
-S['g'] += 0.1*amp*(1 - np.cos(norm*(r-Ri)))*np.sin(theta)*np.sin(phi)
+# take 𝓁=m spherical harmonic perturbations at 𝓁=[1,19],
+# with a radial bump function, and a 𝓁=0 background
+rnorm = 2*np.pi/(Ro - Ri)
+rfunc = (1 - np.cos(rnorm*(r-Ri)))
+S['g'] = 0
+for 𝓁, amp in zip([1, 19], [1e-3, 1e-2]):
+    norm = 1/(2**𝓁*np.math.factorial(𝓁))*np.sqrt(np.math.factorial(2*𝓁+1)/(4*np.pi))
+    S['g'] += amp*norm*rfunc*(np.cos(𝓁*phi)+np.sin(𝓁*phi))*np.sin(theta)**𝓁
 zeta.change_scales(1)
 S['g'] += (zeta_out**(-2) - (c0 + c1/r)**(-2)) / (zeta_out**(-2) - zeta_in**(-2))
 
@@ -225,9 +229,13 @@ profiles.add_task(S(r=(Ri+Ro)/2,theta=np.pi/2), name='S_profile')
 
 sphere_integ = lambda A: de.Average(A, coords.S2coordsys)*4*np.pi
 L = rho0*cross(rvec,u)
+ω = curl(u)*Ekman/2
 
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=1e-3, max_writes=None)
 traces.add_task(0.5*de.integ(rho0*u@u), name='KE')
+traces.add_task(np.sqrt(volavg(u@u)), name='Re')
+traces.add_task(np.sqrt(volavg(ω@ω)), name='Ro')
+
 traces.add_task(de.integ(L@ex), name='Lx')
 traces.add_task(de.integ(L@ey), name='Ly')
 traces.add_task(de.integ(L@ez), name='Lz')
@@ -238,8 +246,6 @@ traces.add_task(shellavg(np.abs(τ_S1)), name='τ_S1')
 traces.add_task(shellavg(np.abs(τ_S2)), name='τ_S2')
 traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
 traces.add_task(shellavg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
-#traces.add_task(volavg(Lz), name='Lz')
-
 
 # CFL
 if args['--max_dt']:
@@ -255,6 +261,7 @@ report_cadence = 10
 # Flow properties
 flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
+flow.add_property(np.sqrt(ω@ω), name='Ro')
 flow.add_property(np.abs(τ_p), name='|τ_p|')
 flow.add_property(np.abs(τ_S1), name='|τ_S1|')
 flow.add_property(np.abs(τ_S2), name='|τ_S2|')
@@ -269,9 +276,10 @@ try:
         solver.step(Δt)
         if solver.iteration > 0 and solver.iteration % report_cadence == 0:
             max_Re = flow.max('Re')
+            avg_Ro = flow.grid_average('Ro')
             max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_S1|'), flow.max('|τ_S2|'), flow.max('|τ_p|')])
 
-            logger.info('Iteration={:d}, Time={:.4e}, dt={:.2e}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, max_Re, max_τ))
+            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, max_τ))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
