@@ -49,8 +49,11 @@ else:
 
 fig_E, ax_E = plt.subplots(nrows=2)
 for key in ['KE']:
+    i_ten = int(0.9*data[key].shape[0])
+    avg_E_f = np.mean(data[key][i_ten:])
+
     ax_E[0].plot(t, data[key], label=key)
-    ax_E[1].plot(t, np.abs(data[key]-data[key][-1]), label=key)
+    ax_E[1].plot(t, np.abs(data[key]-avg_E_f), label=key)
 
 for ax in ax_E:
     if subrange:
@@ -117,7 +120,7 @@ i_ten = int(0.9*data[benchmark_set[0]].shape[0])
 print("benchmark values")
 for benchmark in benchmark_set:
     print("{:s} = {:14.12g} +- {:4.2g} (averaged from {:g}-{:g})".format(benchmark, np.mean(data[benchmark][i_ten:]), np.std(data[benchmark][i_ten:]), t[i_ten], t[-1]))
-print()
-for benchmark in benchmark_set:
-    print("{:s} = {:14.12g} (at t={:g})".format(benchmark, data[benchmark][-1], t[-1]))
-print("total simulation time {:6.2g}".format(t[-1]-t[0]))
+# print()
+# for benchmark in benchmark_set:
+#     print("{:s} = {:14.12g} (at t={:g})".format(benchmark, data[benchmark][-1], t[-1]))
+# print("total simulation time {:6.2g}".format(t[-1]-t[0]))
