@@ -88,9 +88,12 @@ b_outer = basis.S2_basis(radius=r_outer)
 s2_basis = basis.S2_basis()
 V = basis.volume
 
+bk1 = basis.clone_with(k=1)
+bk2 = basis.clone_with(k=2)
+
 # Fields
 u = dist.VectorField(coords, name='u', bases=basis)
-p = dist.Field(name='p', bases=basis)
+p = dist.Field(name='p', bases=bk1)
 S = dist.Field(name='S', bases=basis)
 τ_p = dist.Field(name='τ_p')
 τ_S1 = dist.Field(name='τ_T1', bases=b_outer)
@@ -109,25 +112,27 @@ angular = lambda A: de.AngularComponent(A, index=1)
 
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
-ex = dist.VectorField(coords, bases=basis)
+ex = dist.VectorField(coords, bases=basis, name='ex')
 ex['g'][2] = np.sin(theta)*np.cos(phi)
 ex['g'][1] = np.cos(theta)*np.cos(phi)
 ex['g'][0] = -np.sin(phi)
-ey = dist.VectorField(coords, bases=basis)
+ey = dist.VectorField(coords, bases=basis, name='ey')
 ey['g'][2] = np.sin(theta)*np.sin(phi)
 ey['g'][1] = np.cos(theta)*np.sin(phi)
 ey['g'][0] = np.cos(phi)
-ez = dist.VectorField(coords, bases=basis)
+ez = dist.VectorField(coords, bases=bk1, name='ez')
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
 
 f = de.Grid(2*ez/Ekman)
+f.name='f'
 omega = de.curl(u)
-g = dist.VectorField(coords, bases=basis_ncc)
+basis_ncc_k2 = basis_ncc.clone_with(k=2)
+g = dist.VectorField(coords, bases=basis_ncc_k2, name='g')
 g['g'][2] = 1/r**2
-rvec = dist.VectorField(coords, bases=basis_ncc)
+rvec = dist.VectorField(coords, bases=basis_ncc, name='rvec')
 rvec['g'][2] = r
-zeta = dist.Field(bases=basis_ncc)
+zeta = dist.Field(bases=basis_ncc, name='zeta')
 zeta['g'] = c0 + c1/r
 
 rho0 = (zeta**n).evaluate()
@@ -142,8 +147,6 @@ grad_log_p0.name='grad_ln_p0'
 er = dist.VectorField(coords, bases=basis.radial_basis, name='er')
 er['g'][2] = 1
 
-bk1 = basis.clone_with(k=1)
-bk2 = basis.clone_with(k=2)
 lift1 = lambda A, n: de.Lift(A, bk1, n)
 lift = lambda A, n: de.Lift(A, bk2, n)
 
@@ -169,7 +172,7 @@ Di_zetainv_g = de.Grid((Di/2)*1/zeta)
 # Problem
 problem = de.IVP([p, S, u, τ_p, τ_S1, τ_S2, τ_u1, τ_u2], namespace=locals())
 problem.add_equation("div(u) + u@grad_log_rho0 + τ_p + lift1(τ_u2,-1)@er = 0")
-problem.add_equation("dt(u) + grad(p) - viscous_terms - Rayleigh/Prandtl*S*g + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, omega + f)")
+problem.add_equation("dt(u) + grad(p) - viscous_terms - Rayleigh/Prandtl*S*g + lift(τ_u1, -1) + lift(τ_u2, -2) = -(dot(u,e)) + cross(u, f)")
 problem.add_equation("dt(S) - (lap(S) + grad(S)@grad_log_p0)/Prandtl + lift(τ_S1, -1) + lift(τ_S2, -2) = - (u@grad(S)) + Di_zetainv_g*Phi")
 problem.add_equation("S(r=Ri) = 1")
 problem.add_equation("u_r_inner = 0")
@@ -185,7 +188,6 @@ solver.stop_sim_time = stop_sim_time
 # for testing
 if args['--niter']:
     solver.stop_iteration = int(float(args['--niter']))
-
 
 # Initial conditions
 # Copied from Rayleigh, which itself seems to have been copied from Mark Miesch's implementation in ASH
