@@ -93,15 +93,16 @@ u = dist.VectorField(coords, name='u', bases=basis)
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
 
-ez = dist.VectorField(coords, bases=bk1)
+ez = dist.VectorField(coords, bases=bk1, name='ez')
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
 f = (2*ez/Ekman).evaluate()
+f.name = 'f'
 
-er = dist.VectorField(coords)
+er = dist.VectorField(coords, bases=basis.radial_basis, name='er')
 er['g'][2] = 1
 
-rvec = dist.VectorField(coords, bases=bk2.radial_basis)
+rvec = dist.VectorField(coords, bases=bk2.radial_basis, name='rvec')
 rvec['g'][2] = r/Ro
 
 lift1 = lambda A, n: de.Lift(A, bk1, n)
