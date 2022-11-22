@@ -18,7 +18,7 @@ Options:
     --label=<label>         Additional label for run output directory
 """
 import numpy as np
-import dedalus.public as d3
+import dedalus.public as de
 import logging
 logger = logging.getLogger(__name__)
 
@@ -44,37 +44,42 @@ Ekman = 1e-3
 Prandtl = 1
 MPrandtl = 5
 Rayleigh = 100
-Ri = 7/13
-Ro = 20/13
+Ri = r_inner = 7/13
+Ro = r_outer = 20/13
 Nr = int(args['--Nr'])
 Ntheta = int(args['--Ntheta'])
 Nphi = 2*Ntheta
 stop_sim_time = float(args['--end_time'])
-timestepper = d3.RK222
+timestepper = de.RK222
 mesh = [16, 16]
 dealias = 3/2
 dtype = np.float64
 
 # Bases
-coords = d3.SphericalCoordinates('phi', 'theta', 'r')
-dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
-basis = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+coords = de.SphericalCoordinates('phi', 'theta', 'r')
+dist = de.Distributor(coords, dtype=dtype, mesh=mesh)
+basis = de.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+b_inner = basis.S2_basis(radius=r_inner)
+b_outer = basis.S2_basis(radius=r_outer)
 s2_basis = basis.S2_basis()
+
+bk1 = basis.clone_with(k=1)
+bk2 = basis.clone_with(k=2)
 V = basis.volume
 
 # Fields
-p = dist.Field(name='p', bases=basis)
+p = dist.Field(name='p', bases=bk1)
 T = dist.Field(name='T', bases=basis)
 u = dist.VectorField(coords, name='u', bases=basis)
 A = dist.VectorField(coords, name='A', bases=basis)
-φ = dist.Field(name='φ', bases=basis)
+φ = dist.Field(name='φ', bases=bk1)
 τ_p = dist.Field(name='τ_p')
-τ_T1 = dist.Field(name='τ_T1', bases=s2_basis)
-τ_T2 = dist.Field(name='τ_T2', bases=s2_basis)
-τ_u1 = dist.VectorField(coords, name='τ_u1', bases=s2_basis)
-τ_u2 = dist.VectorField(coords, name='τ_u2', bases=s2_basis)
-τ_A1 = dist.VectorField(coords, name='τ_A1', bases=s2_basis)
-τ_A2 = dist.VectorField(coords, name='τ_A2', bases=s2_basis)
+τ_T1 = dist.Field(name='τ_T1', bases=b_outer)
+τ_T2 = dist.Field(name='τ_T2', bases=b_inner)
+τ_u1 = dist.VectorField(coords, name='τ_u1', bases=b_outer)
+τ_u2 = dist.VectorField(coords, name='τ_u2', bases=b_inner)
+τ_A1 = dist.VectorField(coords, name='τ_A1', bases=b_outer)
+τ_A2 = dist.VectorField(coords, name='τ_A2', bases=b_inner)
 τ_φ = dist.Field(name='τ_φ')
 
 # Substitutions
@@ -87,34 +92,33 @@ ey = dist.VectorField(coords, bases=basis, name='ey')
 ey['g'][2] = np.sin(theta)*np.sin(phi)
 ey['g'][1] = np.cos(theta)*np.sin(phi)
 ey['g'][0] = np.cos(phi)
-ez = dist.VectorField(coords, bases=basis)
+ez = dist.VectorField(coords, bases=basis, name='ez')
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
-f = d3.Grid(2*ez/Ekman)
-rvec = dist.VectorField(coords, bases=basis.radial_basis)
+f = (2*ez/Ekman).evaluate()
+f.name='f'
+rvec = dist.VectorField(coords, bases=bk2.radial_basis, name='rvec')
 rvec['g'][2] = r/Ro
-er = dist.VectorField(coords)
+er = dist.VectorField(coords, bases=basis.radial_basis, name='er')
 er['g'][2] = 1
-B = d3.curl(A)
-lift_basis = basis.derivative_basis(1)
-lift = lambda A: d3.Lift(A, lift_basis, -1)
-grad_u = d3.grad(u) + rvec*lift(τ_u1) # First-order reduction
-grad_T = d3.grad(T) + rvec*lift(τ_T1) # First-order reduction
-grad_A = d3.grad(A) + rvec*lift(τ_A1) # First-order reduction
+B = de.curl(A)
+
+lift1 = lambda A, n: de.Lift(A, bk1, n)
+lift = lambda A, n: de.Lift(A, bk2, n)
 
 ell_func_o = lambda ell: ell+1
-A_potential_bc_o = d3.radial(d3.grad(A)(r=Ro)) + d3.SphericalEllProduct(A, coords, ell_func_o)(r=Ro)/Ro
+A_potential_bc_o = de.radial(de.grad(A)(r=Ro)) + de.SphericalEllProduct(A, coords, ell_func_o)(r=Ro)/Ro
 
 ell_func_i = lambda ell: -ell
-A_potential_bc_i = d3.radial(d3.grad(A)(r=Ri)) + d3.SphericalEllProduct(A, coords, ell_func_i)(r=Ri)/Ri
+A_potential_bc_i = de.radial(de.grad(A)(r=Ri)) + de.SphericalEllProduct(A, coords, ell_func_i)(r=Ri)/Ri
 
 # Problem
-problem = d3.IVP([p, T, u, A, φ, τ_p, τ_T1, τ_T2, τ_u1, τ_u2, τ_A1, τ_A2, τ_φ], namespace=locals())
-problem.add_equation("trace(grad_u) + τ_p = 0")
-problem.add_equation("dt(T) - div(grad_T)/Prandtl + lift(τ_T2) = - (u@grad(T))")
-problem.add_equation("dt(u) - div(grad_u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + lift(τ_u2) = cross(u, curl(u) + f) + cross(B, lap(A))/MPrandtl/Ekman")
-problem.add_equation("trace(grad_A) + τ_φ = 0")
-problem.add_equation("dt(A) - div(grad_A)/MPrandtl + grad(φ) + lift(τ_A2) = cross(u, B)")
+problem = de.IVP([p, T, u, A, φ, τ_p, τ_T1, τ_T2, τ_u1, τ_u2, τ_A1, τ_A2, τ_φ], namespace=locals())
+problem.add_equation("div(u) + τ_p + lift1(τ_u2,-1)@er = 0")
+problem.add_equation("dt(T) - lap(T)/Prandtl + lift(τ_T1,-1) + lift(τ_T2,-2) = - (u@grad(T))")
+problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, curl(u) + f) + cross(B, lap(A))/MPrandtl/Ekman")
+problem.add_equation("div(A) + τ_φ + lift1(τ_A2,-1)@er = 0")
+problem.add_equation("dt(A) - lap(A)/MPrandtl + grad(φ) + lift(τ_A1, -1) + lift(τ_A2, -2) = cross(u, B)")
 problem.add_equation("T(r=Ri) = 1")
 problem.add_equation("u(r=Ri) = 0")
 problem.add_equation("A_potential_bc_i = 0")
@@ -141,9 +145,9 @@ B0['g'][1] = 5/8 * (9*r - 8*Ro - Ri**4/r**3)*np.sin(theta)
 B0['g'][2] = 5/8 * (8*Ro - 6*r - 2*Ri**4/r**3)*np.cos(theta)
 τ_φ1 = dist.Field(bases=s2_basis)
 
-mag_BVP = d3.LBVP([A, φ, τ_A1, τ_φ1, τ_φ], namespace=locals())
-mag_BVP.add_equation("curl(A) + grad(φ) + lift(τ_A1) = B0")
-mag_BVP.add_equation("div(A) + lift(τ_φ1) + τ_φ = 0")
+mag_BVP = de.LBVP([A, φ, τ_A1, τ_φ1, τ_φ], namespace=locals())
+mag_BVP.add_equation("curl(A) + grad(φ) + lift(τ_A1, -1) = B0")
+mag_BVP.add_equation("div(A) + lift(τ_φ1, -1) + τ_φ = 0")
 mag_BVP.add_equation("angular(A_potential_bc_o) = 0", condition='ntheta!=0')
 mag_BVP.add_equation("angular(A_potential_bc_i) = 0", condition='ntheta!=0')
 mag_BVP.add_equation("radial(A_potential_bc_o) = 0", condition='ntheta==0')
@@ -199,13 +203,13 @@ if args['--max_dt']:
 else:
     max_timestep = Ekman/10
 
-CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=0.1,
+CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=0.1,
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
 report_cadence = 10
 # Flow properties
-flow = d3.GlobalFlowProperty(solver, cadence=report_cadence)
+flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
 flow.add_property(np.sqrt(ω@ω), name='Ro')
 flow.add_property(np.abs(τ_p), name='|τ_p|')
