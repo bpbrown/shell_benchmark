@@ -47,8 +47,14 @@ if args['--times']:
 else:
     subrange = False
 
+if 'ME' in data:
+    energy_keys = ['KE', 'ME']
+else:
+    energy_keys = ['KE']
+
+
 fig_E, ax_E = plt.subplots(nrows=2, sharex=True)
-for key in ['KE']:
+for key in energy_keys:
     i_ten = int(0.9*data[key].shape[0])
     avg_E_f = np.mean(data[key][i_ten:])
 
@@ -68,21 +74,24 @@ fig_E.savefig('{:s}/energies.png'.format(str(output_path)), dpi=300)
 
 fig_tau, ax_tau = plt.subplots(nrows=2, sharex=True)
 for i in range(2):
-    ax_tau[i].plot(t, data['τ_u1'], label=r'$\tau_{u1}$')
-    ax_tau[i].plot(t, data['τ_u2'], label=r'$\tau_{u2}$')
+    p = ax_tau[i].plot(t, data['τ_u1'], label=r'$\tau_{u1,2}$')
+    ax_tau[i].plot(t, data['τ_u2'], color=p[0].get_color(), linestyle='dashed')
     if 'τ_T1' in data:
-        ax_tau[i].plot(t, data['τ_T1'], label=r'$\tau_{T1}$')
-        ax_tau[i].plot(t, data['τ_T2'], label=r'$\tau_{T2}$')
+        p = ax_tau[i].plot(t, data['τ_T1'], label=r'$\tau_{T1,2}$')
+        ax_tau[i].plot(t, data['τ_T2'], color=p[0].get_color(), linestyle='dashed')
     elif 'τ_S1' in data:
-        ax_tau[i].plot(t, data['τ_S1'], label=r'$\tau_{S1}$')
-        ax_tau[i].plot(t, data['τ_S2'], label=r'$\tau_{S2}$')
+        p = ax_tau[i].plot(t, data['τ_S1'], label=r'$\tau_{S1,2}$')
+        ax_tau[i].plot(t, data['τ_S2'], color=p[0].get_color(), linestyle='dashed')
     ax_tau[i].plot(t, data['τ_p'], label=r'$\tau_{p}$')
-
+    if 'τ_A1' in data:
+        p = ax_tau[i].plot(t, data['τ_A1'], label=r'$\tau_{A1,2}$')
+        ax_tau[i].plot(t, data['τ_A2'], color=p[0].get_color(), linestyle='dashed')
+        #ax_tau[i].plot(t, data['τ_φ'], label=r'$\tau_{\phi}$')
 for ax in ax_tau:
     if subrange:
         ax.set_xlim(t_min,t_max)
     ax.set_ylabel(r'$<\tau>$')
-    ax.legend(loc='lower left')
+    ax.legend()
 ax_tau[1].set_xlabel('time')
 ax_tau[1].set_yscale('log')
 ylims = ax_tau[1].get_ylim()
@@ -124,10 +133,14 @@ ax_r.set_yscale('log') # relies on it being the last instance; poor practice
 fig_f.savefig('{:s}/Re_and_Ro.pdf'.format(str(output_path)))
 fig_f.savefig('{:s}/Re_and_Ro.png'.format(str(output_path)), dpi=300)
 
+benchmark_set = ['KE', 'Ro', 'Re', 'τ_u1', 'τ_u2', 'τ_p']
+if 'ME' in data:
+    benchmark_set = [benchmark_set[0], 'ME'] + benchmark_set[1:]
+    benchmark_set = benchmark_set[0:-1] + ['τ_A1', 'τ_A2'] + [benchmark_set[-1]]
 if 'τ_T1' in data:
-    benchmark_set = ['KE', 'Ro', 'Re', 'τ_u1', 'τ_u2', 'τ_T1', 'τ_T2', 'τ_p']
+    benchmark_set = benchmark_set[0:-1] + ['τ_T1', 'τ_T2'] + [benchmark_set[-1]]
 elif 'τ_S1' in data:
-    benchmark_set = ['KE', 'Ro', 'Re', 'τ_u1', 'τ_u2', 'τ_S1', 'τ_S2', 'τ_p']
+    benchmark_set = benchmark_set[0:-1] + ['τ_S1', 'τ_S2'] + [benchmark_set[-1]]
 
 i_ten = int(0.9*data[benchmark_set[0]].shape[0])
 print("benchmark values")

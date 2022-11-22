@@ -17,6 +17,7 @@ Options:
 
     --label=<label>         Additional label for run output directory
 """
+import sys
 import numpy as np
 import dedalus.public as de
 import logging
@@ -50,10 +51,22 @@ Nr = int(args['--Nr'])
 Ntheta = int(args['--Ntheta'])
 Nphi = 2*Ntheta
 stop_sim_time = float(args['--end_time'])
-timestepper = de.RK222
-mesh = [16, 16]
+timestepper = de.SBDF2
 dealias = 3/2
 dtype = np.float64
+
+data_dir = sys.argv[0].split('.py')[0]
+data_dir += '_Th{}_R{}'.format(args['--Ntheta'], args['--Nr'])
+if args['--max_dt']:
+    data_dir += '_dt{}'.format(args['--max_dt'])
+
+if args['--label']:
+    data_dir += '_{:s}'.format(args['--label'])
+logger.info("saving data in {}".format(data_dir))
+
+import dedalus.tools.logging as dedalus_logging
+dedalus_logging.add_file_handler(data_dir+'/logs/dedalus_log', 'DEBUG')
+
 
 # Bases
 coords = de.SphericalCoordinates('phi', 'theta', 'r')
@@ -139,10 +152,11 @@ T['g'] = Ri*Ro/r - Ri + 210*amp/np.sqrt(17920*np.pi)*(1-3*x**2+3*x**4-x**6)*np.s
 
 # We want to solve for an initial vector potential A
 # with curl(A) = B0. We will do this as a BVP.
+B_amp = 1 # 5 is the value in Christensen et al 2001, case 1
 B0 = dist.VectorField(coords, bases=basis)
-B0['g'][0] = 5*np.sin(np.pi*(r-Ri))*np.sin(2*theta)
-B0['g'][1] = 5/8 * (9*r - 8*Ro - Ri**4/r**3)*np.sin(theta)
-B0['g'][2] = 5/8 * (8*Ro - 6*r - 2*Ri**4/r**3)*np.cos(theta)
+B0['g'][0] = B_amp*np.sin(np.pi*(r-Ri))*np.sin(2*theta)
+B0['g'][1] = B_amp/8 * (9*r - 8*Ro - Ri**4/r**3)*np.sin(theta)
+B0['g'][2] = B_amp/8 * (8*Ro - 6*r - 2*Ri**4/r**3)*np.cos(theta)
 τ_φ1 = dist.Field(bases=s2_basis)
 
 mag_BVP = de.LBVP([A, φ, τ_A1, τ_φ1, τ_φ], namespace=locals())
@@ -169,24 +183,25 @@ integ = lambda A: de.integ(A)
 L = cross(rvec, u)
 ω = curl(u)*Ekman/2
 
-snapshots = solver.evaluator.add_file_handler('slices', sim_dt=1e-1, max_writes=10)
+snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=1e-1, max_writes=10)
 snapshots.add_task(T(r=Ro), scales=dealias, name='T_r_outer')
 snapshots.add_task(T(r=Ri), scales=dealias, name='T_r_inner')
 snapshots.add_task(T(r=(Ri+Ro)/2), scales=dealias, name='T_r_mid')
 snapshots.add_task(T(phi=0), scales=dealias, name='T_φ_start')
 snapshots.add_task(T(phi=3*np.pi/2), scales=dealias, name='T_φ_end')
 
-profiles = solver.evaluator.add_file_handler('profiles', sim_dt=out_cadence, max_writes=100)
+profiles = solver.evaluator.add_file_handler(data_dir+'/profiles', sim_dt=out_cadence, max_writes=100)
 profiles.add_task(u(r=(Ri+Ro)/2,theta=np.pi/2), name='u_profile')
 profiles.add_task(B(r=(Ri+Ro)/2,theta=np.pi/2), name='B_profile')
 profiles.add_task(T(r=(Ri+Ro)/2,theta=np.pi/2), name='T_profile')
 
-traces = solver.evaluator.add_file_handler('traces', sim_dt=out_cadence, max_writes=None)
+traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=out_cadence, max_writes=None)
 traces.add_task(0.5*volavg(u@u), name='KE')
 traces.add_task(0.5*volavg(B@B)/Ekman/MPrandtl, name='ME')
 traces.add_task(np.sqrt(volavg(u@u)), name='Re')
 traces.add_task(np.sqrt(volavg(ω@ω)), name='Ro')
 traces.add_task(np.abs(τ_p), name='τ_p')
+traces.add_task(np.abs(τ_φ), name='τ_φ')
 traces.add_task(shellavg(np.abs(τ_T1)), name='τ_T1')
 traces.add_task(shellavg(np.abs(τ_T2)), name='τ_T2')
 traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
@@ -203,9 +218,11 @@ if args['--max_dt']:
 else:
     max_timestep = Ekman/10
 
+B_vel = curl(A)/np.sqrt(MPrandtl*Ekman)
 CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=0.1,
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
+CFL.add_velocity(B_vel)
 
 report_cadence = 10
 # Flow properties
@@ -213,6 +230,7 @@ flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
 flow.add_property(np.sqrt(ω@ω), name='Ro')
 flow.add_property(np.abs(τ_p), name='|τ_p|')
+flow.add_property(np.abs(τ_φ), name='|τ_φ|')
 flow.add_property(np.abs(τ_T1), name='|τ_T1|')
 flow.add_property(np.abs(τ_T2), name='|τ_T2|')
 flow.add_property(np.sqrt(dot(τ_u1,τ_u1)), name='|τ_u1|')
