@@ -153,4 +153,3 @@ except:
     raise
 finally:
     solver.log_stats()
-
