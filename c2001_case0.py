@@ -187,8 +187,9 @@ CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
+report_cadence = 10
 # Flow properties
-flow = de.GlobalFlowProperty(solver, cadence=10)
+flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
 flow.add_property(np.sqrt(ω@ω), name='Ro')
 flow.add_property(np.abs(τ_p), name='|τ_p|')
@@ -197,7 +198,6 @@ flow.add_property(np.abs(τ_T2), name='|τ_T2|')
 flow.add_property(np.sqrt(dot(τ_u1,τ_u1)), name='|τ_u1|')
 flow.add_property(np.sqrt(dot(τ_u2,τ_u2)), name='|τ_u2|')
 
-report_cadence = 10
 # Main loop
 try:
     logger.info('Starting main loop')
