@@ -86,7 +86,7 @@ for i in range(2):
     if 'τ_A1' in data:
         p = ax_tau[i].plot(t, data['τ_A1'], label=r'$\tau_{A1,2}$')
         ax_tau[i].plot(t, data['τ_A2'], color=p[0].get_color(), linestyle='dashed')
-        #ax_tau[i].plot(t, data['τ_φ'], label=r'$\tau_{\phi}$')
+        ax_tau[i].plot(t, data['τ_φ'], label=r'$\tau_{\phi}$')
 for ax in ax_tau:
     if subrange:
         ax.set_xlim(t_min,t_max)
@@ -136,11 +136,12 @@ fig_f.savefig('{:s}/Re_and_Ro.png'.format(str(output_path)), dpi=300)
 benchmark_set = ['KE', 'Ro', 'Re', 'τ_u1', 'τ_u2', 'τ_p']
 if 'ME' in data:
     benchmark_set = [benchmark_set[0], 'ME'] + benchmark_set[1:]
-    benchmark_set = benchmark_set[0:-1] + ['τ_A1', 'τ_A2'] + [benchmark_set[-1]]
 if 'τ_T1' in data:
     benchmark_set = benchmark_set[0:-1] + ['τ_T1', 'τ_T2'] + [benchmark_set[-1]]
 elif 'τ_S1' in data:
     benchmark_set = benchmark_set[0:-1] + ['τ_S1', 'τ_S2'] + [benchmark_set[-1]]
+if 'τ_A1' in data:
+    benchmark_set += ['τ_A1', 'τ_A2', 'τ_φ']
 
 i_ten = int(0.9*data[benchmark_set[0]].shape[0])
 print("benchmark values")
