@@ -5,8 +5,8 @@ Usage:
     c2001_case1.py [options]
 
 Options:
-    --Ntheta=<Ntheta>       Latitude coeffs [default: 16]
-    --Nr=<Nr>               Radial coeffs  [default: 16]
+    --Ntheta=<Ntheta>       Latitude coeffs [default: 32]
+    --Nr=<Nr>               Radial coeffs  [default: 32]
 """
 import logging
 logger = logging.getLogger(__name__)
