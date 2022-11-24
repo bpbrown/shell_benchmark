@@ -17,6 +17,9 @@ import numpy as np
 import dedalus.public as de
 
 def test_IC(Nr, Ntheta):
+    L2_error = lambda A, B: de.integ(de.dot(A-B,A-B)).evaluate()['g'][0,0,0]
+    L2_set = {}
+
     # parameters
     Ri = r_inner = 7/13
     Ro = r_outer = 20/13
@@ -74,7 +77,10 @@ def test_IC(Nr, Ntheta):
     solver_BVP = mag_BVP.build_solver()
     solver_BVP.solve()
 
-    B_out = de.curl(A).evaluate()
+    label = r'div(A) + τ_φ + lift1(τ_A2,-1)@er'
+    B = de.curl(A).evaluate()
+    L2_set[label] = L2_error(B0, B)
+    print(label, L2_error(B0, B), de.integ(de.div(A)).evaluate()['g'][0,0,0])
 
     # test old version, with no tau projection in the div(A) equation
     mag_BVP = de.LBVP([A, φ, τ_A1, τ_A2, τ_φ], namespace=locals())
@@ -85,14 +91,32 @@ def test_IC(Nr, Ntheta):
     mag_BVP.add_equation("integ(φ) = 0")
     solver_BVP = mag_BVP.build_solver()
     solver_BVP.solve()
-    B_out_no_tau = de.curl(A).evaluate()
 
-    L2_error = lambda A, B: de.integ(de.dot(A-B,A-B)).evaluate()['g'][0,0,0]
+    label = r'div(A) + τ_φ'
+    B = de.curl(A).evaluate()
+    L2_set[label] = L2_error(B0, B)
+    print(label, L2_error(B0, B), de.integ(de.div(A)).evaluate()['g'][0,0,0])
 
-    B0.change_scales(1)
-    B_out.change_scales(1)
-    B_out_no_tau.change_scales(1)
-    return L2_error(B0, B_out), L2_error(B0, B_out_no_tau)
+    # test an alternative BVP, which directly solves for A from B0
+    τ_φ1 = dist.Field(bases=b_outer)
+    mag_BVP = de.LBVP([A, φ, τ_A1, τ_φ1, τ_φ], namespace=locals())
+    mag_BVP.add_equation("curl(A) + grad(φ) + lift(τ_A1, -1) = B0")
+    mag_BVP.add_equation("div(A) + lift(τ_φ1, -1) + τ_φ = 0")
+    mag_BVP.add_equation("angular(A_potential_bc_o) = 0", condition='ntheta!=0')
+    mag_BVP.add_equation("angular(A_potential_bc_i) = 0", condition='ntheta!=0')
+    mag_BVP.add_equation("radial(A_potential_bc_o) = 0", condition='ntheta==0')
+    mag_BVP.add_equation("radial(A_potential_bc_i) = 0", condition='ntheta==0')
+    mag_BVP.add_equation("integ(φ) = 0")
+    solver_BVP = mag_BVP.build_solver()
+    solver_BVP.solve()
+
+    label = r'curl(A) + grad(φ) = B0'
+    B = de.curl(A).evaluate()
+    L2_set[label] = L2_error(B0, B)
+
+    print(label, L2_error(B0, B), de.integ(de.div(A)).evaluate()['g'][0,0,0])
+
+    return L2_set
 
 if __name__=='__main__':
     import matplotlib.pyplot as plt
@@ -110,17 +134,19 @@ if __name__=='__main__':
 
     Nr_set = log_set(4, Nr_max)
     Ntheta = 16
-    L2 = []
-    L2_no_tau = []
-    for Nr in Nr_set:
-        L2_i, L2_no_tau_i = test_IC(Nr, Ntheta)
-        L2.append(L2_i)
-        L2_no_tau.append(L2_no_tau_i)
+    L2 = {}
+    for i, Nr in enumerate(Nr_set):
+        L2_set = test_IC(Nr, Ntheta)
+        for label in L2_set:
+            if i == 0:
+                L2[label] = []
+            L2[label].append(L2_set[label])
 
     fig, ax = plt.subplots(nrows=2)
+    linestyles = ['solid', 'solid', 'dashed']
 
-    ax[0].plot(Nr_set, L2, label=r'div(A) + τ_φ + lift1(τ_A2,-1)@er = 0')
-    ax[0].plot(Nr_set, L2_no_tau, label=r'div(A) + τ_φ = 0')
+    for label, linestyle in zip(L2, linestyles):
+        ax[0].plot(Nr_set, L2[label], label=label, linestyle=linestyle)
     ax[0].set_yscale('log')
     ax[0].set_xscale('log', base=2)
     ax[0].set_xlabel(r'$N_r$')
@@ -129,15 +155,16 @@ if __name__=='__main__':
 
     Ntheta_set = log_set(4, Ntheta_max)
     Nr = 16
-    L2 = []
-    L2_no_tau = []
-    for Ntheta in Ntheta_set:
-        L2_i, L2_no_tau_i = test_IC(Nr, Ntheta)
-        L2.append(L2_i)
-        L2_no_tau.append(L2_no_tau_i)
+    L2 = {}
+    for i, Ntheta in enumerate(Ntheta_set):
+        L2_set = test_IC(Nr, Ntheta)
+        for label in L2_set:
+            if i == 0:
+                L2[label] = []
+            L2[label].append(L2_set[label])
 
-    ax[1].plot(Ntheta_set, L2, label=r'div(A) + τ_φ + lift1(τ_A2,-1)@er = 0')
-    ax[1].plot(Ntheta_set, L2_no_tau, label=r'div(A) + τ_φ = 0')
+    for label, linestyle in zip(L2, linestyles):
+        ax[1].plot(Ntheta_set, L2[label], label=label, linestyle=linestyle)
     ax[1].set_yscale('log')
     ax[1].set_xscale('log', base=2)
     ax[1].set_xlabel(r'$N_\theta$')
