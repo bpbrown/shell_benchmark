@@ -152,20 +152,18 @@ T['g'] = Ri*Ro/r - Ri + 210*amp/np.sqrt(17920*np.pi)*(1-3*x**2+3*x**4-x**6)*np.s
 
 # We want to solve for an initial vector potential A
 # with curl(A) = B0. We will do this as a BVP.
-B_amp = 1 # 5 is the value in Christensen et al 2001, case 1
+B_amp = 3 # 5 is the value in Christensen et al 2001, case 1
 B0 = dist.VectorField(coords, bases=basis)
 B0['g'][0] = B_amp*np.sin(np.pi*(r-Ri))*np.sin(2*theta)
 B0['g'][1] = B_amp/8 * (9*r - 8*Ro - Ri**4/r**3)*np.sin(theta)
 B0['g'][2] = B_amp/8 * (8*Ro - 6*r - 2*Ri**4/r**3)*np.cos(theta)
-τ_φ1 = dist.Field(bases=s2_basis)
+J0 = de.curl(B0)
 
-mag_BVP = de.LBVP([A, φ, τ_A1, τ_φ1, τ_φ], namespace=locals())
-mag_BVP.add_equation("curl(A) + grad(φ) + lift(τ_A1, -1) = B0")
-mag_BVP.add_equation("div(A) + lift(τ_φ1, -1) + τ_φ = 0")
-mag_BVP.add_equation("angular(A_potential_bc_o) = 0", condition='ntheta!=0')
-mag_BVP.add_equation("angular(A_potential_bc_i) = 0", condition='ntheta!=0')
-mag_BVP.add_equation("radial(A_potential_bc_o) = 0", condition='ntheta==0')
-mag_BVP.add_equation("radial(A_potential_bc_i) = 0", condition='ntheta==0')
+mag_BVP = de.LBVP([A, φ, τ_A1, τ_A2, τ_φ], namespace=locals())
+mag_BVP.add_equation("-lap(A) + grad(φ) + lift(τ_A1, -1)  + lift(τ_A2, -2)= J0")
+mag_BVP.add_equation("div(A) + τ_φ + lift1(τ_A2,-1)@er = 0")
+mag_BVP.add_equation("A_potential_bc_o = 0")
+mag_BVP.add_equation("A_potential_bc_i = 0")
 mag_BVP.add_equation("integ(φ) = 0")
 solver_BVP = mag_BVP.build_solver()
 solver_BVP.solve()
@@ -218,13 +216,15 @@ if args['--max_dt']:
 else:
     max_timestep = Ekman/10
 
+initial_dt = max_timestep
+
 B_vel = curl(A)/np.sqrt(MPrandtl*Ekman)
-CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=0.1,
+CFL = de.CFL(solver, initial_dt=initial_dt, cadence=1, safety=0.35, threshold=0.1,
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
-CFL.add_velocity(B_vel)
+#CFL.add_velocity(B_vel)
 
-report_cadence = 10
+report_cadence = 100
 # Flow properties
 flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
