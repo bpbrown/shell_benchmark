@@ -12,6 +12,9 @@ Options:
     --Nr=<Nr>               Radial coeffs  [default: 128]
     --mesh=<mesh>           Processor mesh for 3-D runs
 
+    --Mach=<Ma>             Mach number [default: 1e-2]
+    --gamma=<gamma>         Ideal gas gamma [default: 5/3]
+
     --max_dt=<max_dt>       Largest timestep
     --end_time=<end_time>   End of simulation, diffusion times [default: 3]
 
@@ -19,11 +22,14 @@ Options:
 
     --label=<label>         Additional label for run output directory
 """
+import logging
+logger = logging.getLogger(__name__)
+
 import sys
 import numpy as np
 import dedalus.public as de
-import logging
-logger = logging.getLogger(__name__)
+
+from fractions import Fraction
 
 from mpi4py import MPI
 ncpu = MPI.COMM_WORLD.size
@@ -50,6 +56,13 @@ Prandtl = 1
 Rayleigh = 351806
 n = 2
 Nrho = 5
+
+Ma = float(args['--Mach'])
+Ma2 = Ma*Ma
+γ = gamma = float(Fraction(args['--gamma']))
+
+Co2 = Rayleigh*Ekman**2/Prandtl
+scrC = 1/(gamma-1)*Co2/Ma2
 
 Nr = int(args['--Nr'])
 Ntheta = int(args['--Ntheta'])
@@ -80,7 +93,7 @@ zeta_out = (beta + 1) / ( beta*np.exp(Nrho/n) + 1 )
 zeta_in  = (1 + beta - zeta_out) / beta
 c0 = (2*zeta_out - beta - 1) / (1 - beta)
 c1 = (1 + beta)*(1 - zeta_out) / (1 - beta)**2
-Di = c1*Prandtl/Rayleigh
+Di = c1*Prandtl/Rayleigh # needs scrC scaling; work through
 
 # Bases
 coords = de.SphericalCoordinates('phi', 'theta', 'r')
@@ -97,7 +110,8 @@ bk2 = basis.clone_with(k=2)
 
 # Fields
 u = dist.VectorField(coords, name='u', bases=basis)
-p = dist.Field(name='p', bases=bk1)
+θ = dist.Field(name='θ', bases=basis)
+Υ = dist.Field(name='Υ', bases=basis)
 S = dist.Field(name='S', bases=basis)
 τ_p = dist.Field(name='τ_p')
 τ_S1 = dist.Field(name='τ_T1', bases=b_outer)
@@ -148,6 +162,16 @@ grad_log_rho0 = de.grad(np.log(rho0)).evaluate()
 grad_log_rho0.name='grad_ln_ρ0'
 grad_log_p0 = de.grad(np.log(p0)).evaluate()
 grad_log_p0.name='grad_ln_p0'
+h0 = zeta.copy()
+h0.name='h0'
+grad_h0 = de.grad(h0)
+θ0 = (np.log(h0)).evaluate()
+θ0.name='θ0'
+grad_θ0 = de.grad(θ0).evaluate()
+grad_θ0.name='grad_θ0'
+
+grad_θ0_g = de.Grid(grad_θ0)
+h0_g = de.Grid(h0)
 
 er = dist.VectorField(coords, bases=basis.radial_basis, name='er')
 er['g'][2] = 1
@@ -174,22 +198,28 @@ viscous_heating = Phi
 
 Di_zetainv_g = de.Grid((Di/2)*1/zeta)
 
+#Prinv_g = de.Grid(Prandtl)
+Prinv_g = 1/Prandtl #de.Grid(1./Prandtl)
+
 logger.info("NCC expansions:")
 for ncc in [grad_log_rho0, grad_log_p0, g]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
 # Problem
-problem = de.IVP([p, S, u, τ_p, τ_S1, τ_S2, τ_u1, τ_u2], namespace=locals())
-problem.add_equation("div(u) + u@grad_log_rho0 + τ_p + lift1(τ_u2,-1)@er = 0")
-problem.add_equation("dt(u) + grad(p) - viscous_terms - Rayleigh/Prandtl*S*g + lift(τ_u1, -1) + lift(τ_u2, -2) = -(dot(u,e)) + cross(u, f)")
-problem.add_equation("dt(S) - (lap(S) + grad(S)@grad_log_p0)/Prandtl + lift(τ_S1, -1) + lift(τ_S2, -2) = - (u@grad(S)) + Di_zetainv_g*Phi")
-problem.add_equation("S(r=Ri) = 1")
+# todo: check non-dim of this scrC and a whole bunch else
+scrC = 1/(gamma-1)/Ma2
+problem = de.IVP([u, Υ, θ, S, τ_u1, τ_u2, τ_S1, τ_S2], namespace=locals())
+problem.add_equation("dt(Υ) + div(u) + u@grad_log_rho0 + lift1(τ_u2,-1)@er = -(dot(u, grad(Υ)))")
+problem.add_equation("dt(u) + Rayleigh/Prandtl*scrC*(h0*grad(θ) + grad_h0*θ - h0*grad(S)) - viscous_terms + lift(τ_u1, -1) + lift(τ_u2, -2) = -(dot(u,e)) + cross(u, f) - scrC*h0_g*(grad_θ0_g*(np.expm1(θ)-θ) + np.expm1(θ)*grad(θ) + np.expm1(θ)*grad(S))")
+problem.add_equation("dt(S) - (lap(θ) + 2*grad_θ0@grad(θ))/Prandtl + lift(τ_S1, -1) + lift(τ_S2, -2) = - (u@grad(S)) + Prinv_g*(grad(θ)@grad(θ))+ Di_zetainv_g*Phi")
+#                      + 1/scrC*0.5*h0_inv_g*Phi
+problem.add_equation("θ - (γ-1)*Υ - γ*S = 0")
+problem.add_equation("S(r=Ri) = Ma2")
 problem.add_equation("u_r_inner = 0")
 problem.add_equation("u_perp_inner = 0")
 problem.add_equation("S(r=Ro) = 0")
 problem.add_equation("u_r_outer = 0")
 problem.add_equation("u_perp_outer = 0")
-problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper, ncc_cutoff=ncc_cutoff)
@@ -209,6 +239,11 @@ for 𝓁, amp in zip([1, 19], [1e-3, 1e-2]):
     S['g'] += amp*norm*rfunc*(np.cos(𝓁*phi)+np.sin(𝓁*phi))*np.sin(theta)**𝓁
 zeta.change_scales(1)
 S['g'] += (zeta_out**(-2) - (c0 + c1/r)**(-2)) / (zeta_out**(-2) - zeta_in**(-2))
+
+S['g'] *= Ma2
+
+S.change_scales(1)
+θ['g'] = γ*S['g']
 
 # Analysis
 out_cadence = 1e-2
@@ -257,7 +292,7 @@ CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
-report_cadence = 10
+report_cadence = 1
 # Flow properties
 flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
