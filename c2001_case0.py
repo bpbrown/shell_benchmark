@@ -125,7 +125,7 @@ lift1 = lambda A, n: de.Lift(A, bk1, n)
 lift = lambda A, n: de.Lift(A, bk2, n)
 
 
-τ_L = d.VectorField(c, bases=b, name='τ_L')
+τ_L = dist.VectorField(coords, bases=basis, name='τ_L')
 
 # Problem
 problem = de.IVP([p, T, u, τ_p, τ_T1, τ_T2, τ_u1, τ_u2], namespace=locals())
@@ -148,20 +148,21 @@ if args['--niter']:
 
 # Initial conditions
 A = 0.1
-x = 2*r-Ri-Ro
-T['g'] = Ri*Ro/r - Ri + 210*A/np.sqrt(17920*np.pi)*(1-3*x**2+3*x**4-x**6)*np.sin(theta)**4*np.cos(4*phi)
+χ = 2*r-Ri-Ro
+T['g'] = Ri*Ro/r - Ri + 210*A/np.sqrt(17920*np.pi)*(1-3*χ**2+3*χ**4-χ**6)*np.sin(theta)**4*np.cos(4*phi)
 
 # Analysis
 out_cadence = 1e-2
 
 dot = lambda A, B: de.DotProduct(A, B)
 cross = lambda A, B: de.CrossProduct(A, B)
+div = lambda A: de.Divergence(A, index=0)
 curl = lambda A: de.Curl(A)
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
 integ = lambda A: de.integ(A)
 
-L = cross(rvec, u)
+L = cross(rvec, u)*Ekman
 ω = curl(u)*Ekman/2
 PE = Rayleigh/Ekman*T
 
@@ -209,6 +210,7 @@ report_cadence = 10
 flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
 flow.add_property(np.sqrt(ω@ω), name='Ro')
+flow.add_property(dot(L,ez), name='Lz')
 flow.add_property(np.abs(τ_p), name='|τ_p|')
 flow.add_property(np.abs(τ_T1), name='|τ_T1|')
 flow.add_property(np.abs(τ_T2), name='|τ_T2|')
@@ -225,10 +227,11 @@ try:
         if solver.iteration > 0 and solver.iteration % report_cadence == 0:
             max_Re = flow.max('Re')
             avg_Ro = flow.grid_average('Ro')
+            Lz_int = flow.volume_integral('Lz')
             max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_T1|'), flow.max('|τ_T2|'), flow.max('|τ_p|'), flow.max('|τ_L|')])
             max_τ_L = flow.max('|τ_L|')
 
-            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, τ={:.2g},{:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, max_τ,max_τ_L))
+            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, Lz={:.1e}, τ={:.2g},{:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, Lz_int, max_τ,max_τ_L))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
