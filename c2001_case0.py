@@ -104,6 +104,14 @@ ey['g'][0] = np.cos(phi)
 ez = dist.VectorField(coords, bases=bk1, name='ez')
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
+
+z = dist.Field(name='z', bases=basis)
+x = dist.Field(name='x', bases=basis)
+y = dist.Field(name='y', bases=basis)
+x['g'] = r*np.sin(theta)*np.cos(phi)
+y['g'] = r*np.sin(theta)*np.sin(phi)
+z['g'] = r*np.cos(theta)
+
 f = (2*ez/Ekman).evaluate()
 f.name = 'f'
 
@@ -115,6 +123,9 @@ rvec['g'][2] = r/Ro
 
 lift1 = lambda A, n: de.Lift(A, bk1, n)
 lift = lambda A, n: de.Lift(A, bk2, n)
+
+
+τ_L = d.VectorField(c, bases=b, name='τ_L')
 
 # Problem
 problem = de.IVP([p, T, u, τ_p, τ_T1, τ_T2, τ_u1, τ_u2], namespace=locals())
@@ -152,6 +163,7 @@ integ = lambda A: de.integ(A)
 
 L = cross(rvec, u)
 ω = curl(u)*Ekman/2
+PE = Rayleigh/Ekman*T
 
 snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=1e-1, max_writes=10)
 snapshots.add_task(T(r=Ro), scales=dealias, name='T_r_outer')
@@ -166,16 +178,21 @@ profiles.add_task(T(r=(Ri+Ro)/2,theta=np.pi/2), name='T_profile')
 
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=out_cadence, max_writes=None)
 traces.add_task(0.5*volavg(u@u), name='KE')
+traces.add_task(volavg(PE), name='PE')
 traces.add_task(np.sqrt(volavg(u@u)), name='Re')
 traces.add_task(np.sqrt(volavg(ω@ω)), name='Ro')
 traces.add_task(np.abs(τ_p), name='τ_p')
-traces.add_task(shellavg(np.abs(τ_T1)), name='τ_T1')
-traces.add_task(shellavg(np.abs(τ_T2)), name='τ_T2')
+traces.add_task(shellavg(np.abs(τ_T1)), name='τ_S1')
+traces.add_task(shellavg(np.abs(τ_T2)), name='τ_S2')
 traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
 traces.add_task(shellavg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
+traces.add_task(shellavg(np.sqrt(dot(τ_L,τ_L))), name='τ_L')
 traces.add_task(integ(dot(L,ex)), name='Lx')
 traces.add_task(integ(dot(L,ey)), name='Ly')
 traces.add_task(integ(dot(L,ez)), name='Lz')
+traces.add_task(integ(-x*div(L)), name='Λx')
+traces.add_task(integ(-y*div(L)), name='Λy')
+traces.add_task(integ(-z*div(L)), name='Λz')
 
 # CFL
 if args['--max_dt']:
@@ -197,6 +214,7 @@ flow.add_property(np.abs(τ_T1), name='|τ_T1|')
 flow.add_property(np.abs(τ_T2), name='|τ_T2|')
 flow.add_property(np.sqrt(dot(τ_u1,τ_u1)), name='|τ_u1|')
 flow.add_property(np.sqrt(dot(τ_u2,τ_u2)), name='|τ_u2|')
+flow.add_property(np.sqrt(dot(τ_L,τ_L)), name='|τ_L|')
 
 # Main loop
 try:
@@ -207,9 +225,10 @@ try:
         if solver.iteration > 0 and solver.iteration % report_cadence == 0:
             max_Re = flow.max('Re')
             avg_Ro = flow.grid_average('Ro')
-            max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_T1|'), flow.max('|τ_T2|'), flow.max('|τ_p|')])
+            max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_T1|'), flow.max('|τ_T2|'), flow.max('|τ_p|'), flow.max('|τ_L|')])
+            max_τ_L = flow.max('|τ_L|')
 
-            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, max_τ))
+            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, τ={:.2g},{:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, max_τ,max_τ_L))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
