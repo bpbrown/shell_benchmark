@@ -87,6 +87,7 @@ for i in range(2):
         p = ax_tau[i].plot(t, data['τ_A1'], label=r'$\tau_{A1,2}$')
         ax_tau[i].plot(t, data['τ_A2'], color=p[0].get_color(), linestyle='dashed')
         ax_tau[i].plot(t, data['τ_φ'], label=r'$\tau_{\phi}$')
+    ax_tau[i].plot(t, data['τ_L'], label=r'$\tau_{L}$')
 for ax in ax_tau:
     if subrange:
         ax.set_xlim(t_min,t_max)
@@ -111,11 +112,32 @@ for ax in ax_L:
     if subrange:
         ax.set_xlim(t_min,t_max)
     ax.set_ylabel('Angular Momentum')
+    ax.legend()
+ax_L[1].set_xlabel('time')
+ax_L[1].set_yscale('log')
+fig_L.tight_layout()
+fig_L.savefig('{:s}/angular_momentum.pdf'.format(str(output_path)))
+fig_L.savefig('{:s}/angular_momentum.png'.format(str(output_path)), dpi=300)
+
+
+fig_L, ax_L = plt.subplots(nrows=2, sharex=True)
+ax_L[0].plot(t, data['Λx'], label='Λx')
+ax_L[0].plot(t, data['Λy'], label='Λy')
+ax_L[0].plot(t, data['Λz'], label='Λz')
+ax_L[1].plot(t, np.abs(data['Λx']), label='Λx')
+ax_L[1].plot(t, np.abs(data['Λy']), label='Λy')
+ax_L[1].plot(t, np.abs(data['Λz']), label='Λz')
+
+for ax in ax_L:
+    if subrange:
+        ax.set_xlim(t_min,t_max)
+    ax.set_ylabel(r'$\mathbf{\Lambda}=\mathbf{x}(\mathbf{\nabla}\cdot\mathbf{L})$')
     ax.legend(loc='lower left')
 ax_L[1].set_xlabel('time')
 ax_L[1].set_yscale('log')
-fig_L.savefig('{:s}/angular_momentum.pdf'.format(str(output_path)))
-fig_L.savefig('{:s}/angular_momentum.png'.format(str(output_path)), dpi=300)
+fig_L.tight_layout()
+fig_L.savefig('{:s}/angular_momentum_flux_moment.pdf'.format(str(output_path)))
+fig_L.savefig('{:s}/angular_momentum_flux_moment.png'.format(str(output_path)), dpi=300)
 
 fig_f, ax_f = plt.subplots(nrows=2)
 for ax in ax_f:
@@ -142,8 +164,12 @@ elif 'τ_S1' in data:
     benchmark_set = benchmark_set[0:-1] + ['τ_S1', 'τ_S2'] + [benchmark_set[-1]]
 if 'τ_A1' in data:
     benchmark_set += ['τ_A1', 'τ_A2', 'τ_φ']
+benchmark_set += ['Lx','Ly','Lz','Λx','Λy','Λz','τ_L']
 
 i_ten = int(0.9*data[benchmark_set[0]].shape[0])
 print("benchmark values")
 for benchmark in benchmark_set:
-    print("{:s} = {:14.12g} +- {:4.2g} (averaged from {:g}-{:g})".format(benchmark, np.mean(data[benchmark][i_ten:]), np.std(data[benchmark][i_ten:]), t[i_ten], t[-1]))
+    try:
+        print("{:3s} = {:20.12e} +- {:4.2e}".format(benchmark, np.mean(data[benchmark][i_ten:]), np.std(data[benchmark][i_ten:])))
+    except:
+        print("{:3s} missing".format(benchmark))
