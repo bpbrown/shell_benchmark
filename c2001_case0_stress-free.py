@@ -15,6 +15,8 @@ Options:
     --max_dt=<max_dt>       Largest timestep
     --end_time=<end_time>   End of simulation, diffusion times [default: 3]
 
+    --ncc_cutoff=<ncc_cutoff>            Amplitude to truncate NCC terms [default: 1e-10]
+
     --label=<label>         Additional label for run output directory
 """
 import sys
@@ -130,13 +132,37 @@ grad = lambda A: de.Gradient(A, coords)
 trans = lambda A: de.TransposeComponents(A)
 e = grad(u) + trans(grad(u))
 
+m, ell, n = dist.coeff_layout.local_group_arrays(basis.domain, scales=1)
+mask = (ell==1)*(n==0)
+
 τ_L = dist.VectorField(coords, bases=basis, name='τ_L')
+τ_L.valid_modes[2] *= mask
+τ_L.valid_modes[0] = False
+τ_L.valid_modes[1] = False
+
+ncc_cutoff = float(args['--ncc_cutoff'])
+b_ncc = de.ShellBasis(coords, shape=(1, 1, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+#b_ncc = basis.radial_basis
+
+L_cons_ncc = dist.Field(bases=b_ncc, name='L_cons_ncc')
+R_avg = (Ro+Ri)/2
+L_cons_ncc['g'] = (r/R_avg)**3*np.sqrt((r/Ro-1)*(1-r/Ri))
+
+logger.info("NCC expansions:")
+for ncc in [L_cons_ncc, rvec]:
+    logger.info("{}: {}".format(ncc, np.where(np.abs(ncc['c']) >= ncc_cutoff)[0].shape))
 
 # Problem
-problem = de.IVP([p, T, u, τ_p, τ_T1, τ_T2, τ_u1, τ_u2], namespace=locals())
+problem = de.IVP([p, T, u, τ_p, τ_T1, τ_T2, τ_u1, τ_u2, τ_L], namespace=locals())
 problem.add_equation("div(u) + τ_p + lift1(τ_u2,-1)@er = 0")
 problem.add_equation("dt(T) - lap(T)/Prandtl + lift(τ_T1, -1) + lift(τ_T2, -2) = -(u@grad(T))")
-problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, curl(u) + f)")
+problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + τ_L/Ekman + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, curl(u) + f)")
+problem.add_equation((L_cons_ncc*u, 0))
+eq = problem.equations[-1]
+eq['LHS'].valid_modes[2] *= mask
+eq['LHS'].valid_modes[0] = False
+eq['LHS'].valid_modes[1] = False
+
 problem.add_equation("T(r=Ri) = 1")
 problem.add_equation("radial(u(r=Ri)) = 0")
 problem.add_equation("radial(angular(e(r=Ri))) = 0")
@@ -146,7 +172,7 @@ problem.add_equation("radial(angular(e(r=Ro))) = 0")
 problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
-solver = problem.build_solver(timestepper)
+solver = problem.build_solver(timestepper, ncc_cutoff=ncc_cutoff)
 solver.stop_sim_time = stop_sim_time
 
 # for testing
@@ -235,7 +261,7 @@ try:
             max_Re = flow.max('Re')
             avg_Ro = flow.grid_average('Ro')
             Lz_int = flow.volume_integral('Lz')
-            max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_T1|'), flow.max('|τ_T2|'), flow.max('|τ_p|'), flow.max('|τ_L|')])
+            max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_T1|'), flow.max('|τ_T2|'), flow.max('|τ_p|')])
             max_τ_L = flow.max('|τ_L|')
 
             logger.info('Iteration={:d}, Time={:.2e}, dt={:.1e}, Ro={:.2g}, max(Re)={:.2g}, Lz={:.1e}, τ={:.2g},{:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, Lz_int, max_τ,max_τ_L))
