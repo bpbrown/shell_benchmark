@@ -13,14 +13,16 @@ Options:
 
     --Nr=<Nr>            Radial coeffs  [default: 128]
     --ncc_cutoff=<ncc>   Amplitude to truncate NCC terms [default: 1e-10]
+    --dealias=<dealias>  Padding for ncc grid computation [default: 3/2]
+
+    --label=<label>      Optional additional label for figures
 """
 import numpy as np
 import dedalus.public as de
 
-dealias = 3/2
 dtype = np.float64
 
-def calculate_ncc(Nr, benchmark='c2000'):
+def calculate_ncc(Nr, benchmark='c2000', dealias=3/2):
     if benchmark == 'c2000':
         # Christensen et al. 2000, case 0 benchmark
         Ri = 7/13
@@ -36,16 +38,19 @@ def calculate_ncc(Nr, benchmark='c2000'):
     Ntheta = 4
     Nphi = 2*Ntheta
 
+    padded = (1,1,dealias)
+
     # Bases
     coords = de.SphericalCoordinates('phi', 'theta', 'r')
     dist = de.Distributor(coords, dtype=dtype)
     basis = de.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
 
-    phi, theta, r = dist.local_grids(basis)
+    phi, theta, r = dist.local_grids(basis, scales=padded)
 
     b_ncc = de.ShellBasis(coords, shape=(1, 1, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
     #b_ncc = basis.radial_basis
     ρ = dist.Field(bases=b_ncc, name='ρ')
+    ρ.change_scales(padded)
 
     if benchmark == 'c2000':
         ρ['g'] = 1
@@ -60,14 +65,19 @@ def calculate_ncc(Nr, benchmark='c2000'):
         c1 = (1 + beta)*(1 - zeta_out) / (1 - beta)**2
 
         zeta = dist.Field(bases=b_ncc, name='zeta')
+        zeta.change_scales(padded)
+
         zeta['g'] = c0 + c1/r
-        ρ.change_scales(dealias)
+
         ρ['g'] = (zeta**n).evaluate()['g']
-        ρ.change_scales(1)
 
     L_cons_ncc = dist.Field(bases=b_ncc, name='L_cons_ncc')
+    L_cons_ncc.change_scales(padded)
+
     R_avg = (Ro+Ri)/2
     L_cons_ncc['g'] = ρ['g']*(r/R_avg)**3*np.sqrt((r/Ro-1)*(1-r/Ri))
+
+    L_cons_ncc.change_scales(1)
 
     return L_cons_ncc
 
@@ -84,6 +94,9 @@ if __name__=='__main__':
 
     benchmark = args['--benchmark']
 
+    from fractions import Fraction
+    dealias = float(Fraction(args['--dealias']))
+
     Nr_min = 16
     Nr_max = int(args['--Nr'])
 
@@ -96,7 +109,7 @@ if __name__=='__main__':
 
     L_ncc_set = []
     for Nr in Nr_set:
-        L_ncc_set.append(calculate_ncc(Nr, benchmark=benchmark))
+        L_ncc_set.append(calculate_ncc(Nr, benchmark=benchmark, dealias=dealias))
 
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots()
@@ -115,4 +128,7 @@ if __name__=='__main__':
     ax.set_yscale('log')
     ax.set_xscale('log')
     ax.legend()
-    fig.savefig('L_cons_ncc_{}_Nr{:d}-{:d}.png'.format(benchmark, Nr_min,Nr_max), dpi=300)
+    filename = 'L_cons_ncc_{}_Nr{:d}-{:d}'.format(benchmark, Nr_min,Nr_max)
+    if args['--label']:
+        filename += '_{:s}'.format(args['--label'])
+    fig.savefig(filename+'.png', dpi=300)
