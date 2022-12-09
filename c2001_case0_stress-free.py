@@ -145,8 +145,14 @@ b_ncc = de.ShellBasis(coords, shape=(1, 1, Nr), radii=(Ri, Ro), dealias=dealias,
 #b_ncc = basis.radial_basis
 
 L_cons_ncc = dist.Field(bases=b_ncc, name='L_cons_ncc')
+# suppress aliasing errors in the L_cons_ncc
+padded = (1,1,4)
+L_cons_ncc.change_scales(padded)
+phi_pad, theta_pad, r_pad = dist.local_grids(basis, scales=padded)
+
 R_avg = (Ro+Ri)/2
-L_cons_ncc['g'] = (r/R_avg)**3*np.sqrt((r/Ro-1)*(1-r/Ri))
+L_cons_ncc['g'] = (r_pad/R_avg)**3*np.sqrt((r_pad/Ro-1)*(1-r_pad/Ri))
+L_cons_ncc.change_scales(1)
 
 logger.info("NCC expansions:")
 for ncc in [L_cons_ncc, rvec]:
@@ -209,6 +215,9 @@ snapshots.add_task(T(phi=3*np.pi/2), scales=dealias, name='T_phi_end')
 profiles = solver.evaluator.add_file_handler(data_dir+'/profiles', sim_dt=out_cadence, max_writes=100)
 profiles.add_task(u(r=(Ri+Ro)/2,theta=np.pi/2), name='u_profile')
 profiles.add_task(T(r=(Ri+Ro)/2,theta=np.pi/2), name='T_profile')
+
+coeffs = solver.evaluator.add_file_handler(data_dir+'/coeffs', sim_dt=5e-2, max_writes = 10)
+coeffs.add_task(u*Ekman, name='ρu', layout='c')
 
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=out_cadence, max_writes=None)
 traces.add_task(0.5*volavg(u@u), name='KE')
