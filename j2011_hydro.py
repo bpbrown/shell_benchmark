@@ -129,6 +129,13 @@ ez = dist.VectorField(coords, bases=bk1, name='ez')
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
 
+z = dist.Field(name='z', bases=basis)
+x = dist.Field(name='x', bases=basis)
+y = dist.Field(name='y', bases=basis)
+x['g'] = r*np.sin(theta)*np.cos(phi)
+y['g'] = r*np.sin(theta)*np.sin(phi)
+z['g'] = r*np.cos(theta)
+
 f = de.Grid(2*ez/Ekman)
 f.name='f'
 omega = de.curl(u)
@@ -174,14 +181,42 @@ viscous_heating = Phi
 
 Di_zetainv_g = de.Grid((Di/2)*1/zeta)
 
+m, ell, n = dist.coeff_layout.local_group_arrays(basis.domain, scales=1)
+mask = (ell==1)*(n==0)
+
+τ_L = dist.VectorField(coords, bases=basis, name='τ_L')
+τ_L.valid_modes[2] *= mask
+τ_L.valid_modes[0] = False
+τ_L.valid_modes[1] = False
+
+ncc_cutoff = float(args['--ncc_cutoff'])
+b_ncc = de.ShellBasis(coords, shape=(1, 1, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+#b_ncc = basis.radial_basis
+
+L_cons_ncc = dist.Field(bases=b_ncc, name='L_cons_ncc')
+# suppress aliasing errors in the L_cons_ncc
+padded = (1,1,4)
+L_cons_ncc.change_scales(padded)
+phi_pad, theta_pad, r_pad = dist.local_grids(basis, scales=padded)
+
+R_avg = (Ro+Ri)/2
+L_cons_ncc['g'] = (r_pad/R_avg)**3*np.sqrt((r_pad/Ro-1)*(1-r_pad/Ri))
+L_cons_ncc.change_scales(1)
+
 logger.info("NCC expansions:")
-for ncc in [grad_log_rho0, grad_log_p0, g]:
+for ncc in [grad_log_rho0, grad_log_p0, g, L_cons_ncc]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
 # Problem
-problem = de.IVP([p, S, u, τ_p, τ_S1, τ_S2, τ_u1, τ_u2], namespace=locals())
+problem = de.IVP([p, S, u, τ_p, τ_S1, τ_S2, τ_u1, τ_u2, τ_L], namespace=locals())
 problem.add_equation("div(u) + u@grad_log_rho0 + τ_p + lift1(τ_u2,-1)@er = 0")
-problem.add_equation("dt(u) + grad(p) - viscous_terms - Rayleigh/Prandtl*S*g + lift(τ_u1, -1) + lift(τ_u2, -2) = -(dot(u,e)) + cross(u, f)")
+problem.add_equation("dt(u) + grad(p) - viscous_terms - Rayleigh/Prandtl*S*g + τ_L/Ekman + lift(τ_u1, -1) + lift(τ_u2, -2) = -(dot(u,e)) + cross(u, f)")
+problem.add_equation((L_cons_ncc*rho0*u, 0))
+eq = problem.equations[-1]
+eq['LHS'].valid_modes[2] *= mask
+eq['LHS'].valid_modes[0] = False
+eq['LHS'].valid_modes[1] = False
+
 problem.add_equation("dt(S) - (lap(S) + grad(S)@grad_log_p0)/Prandtl + lift(τ_S1, -1) + lift(τ_S2, -2) = - (u@grad(S)) + Di_zetainv_g*Phi")
 problem.add_equation("S(r=Ri) = 1")
 problem.add_equation("u_r_inner = 0")
@@ -215,6 +250,7 @@ out_cadence = 1e-2
 
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
+integ = lambda A: de.integ(A)
 
 snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=out_cadence, max_writes=10)
 snapshots.add_task(S(r=Ro), scales=dealias, name='S_r_outer')
@@ -228,24 +264,31 @@ profiles.add_task(u(r=(Ri+Ro)/2,theta=np.pi/2), name='u_profile')
 profiles.add_task(S(r=(Ri+Ro)/2,theta=np.pi/2), name='S_profile')
 
 sphere_integ = lambda A: de.Average(A, coords.S2coordsys)*4*np.pi
-L = rho0*cross(rvec,u)
+L = rho0*cross(rvec,u)*Ekman
 ω = curl(u)*Ekman/2
 
+coeffs = solver.evaluator.add_file_handler(data_dir+'/coeffs', sim_dt=5e-2, max_writes = 10)
+coeffs.add_task(rho0*u*Ekman, name='ρu', layout='c')
+
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=1e-3, max_writes=None)
-traces.add_task(0.5*de.integ(rho0*u@u), name='KE')
+traces.add_task(0.5*integ(rho0*u@u), name='KE')
 traces.add_task(np.sqrt(volavg(u@u)), name='Re')
 traces.add_task(np.sqrt(volavg(ω@ω)), name='Ro')
 
-traces.add_task(de.integ(L@ex), name='Lx')
-traces.add_task(de.integ(L@ey), name='Ly')
-traces.add_task(de.integ(L@ez), name='Lz')
-traces.add_task(-1/Prandtl*zeta_out**(n+1)*Ro**2*sphere_integ(de.radial(de.grad(S)(r=Ro))), name='Luminosity')
+traces.add_task(integ(L@ex), name='Lx')
+traces.add_task(integ(L@ey), name='Ly')
+traces.add_task(integ(L@ez), name='Lz')
+traces.add_task(integ(-x*div(L)), name='Λx')
+traces.add_task(integ(-y*div(L)), name='Λy')
+traces.add_task(integ(-z*div(L)), name='Λz')
+#traces.add_task(-1/Prandtl*zeta_out**(n+1)*Ro**2*sphere_integ(de.radial(de.grad(S)(r=Ro))), name='Luminosity')
 
 traces.add_task(np.abs(τ_p), name='τ_p')
 traces.add_task(shellavg(np.abs(τ_S1)), name='τ_S1')
 traces.add_task(shellavg(np.abs(τ_S2)), name='τ_S2')
-traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
-traces.add_task(shellavg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
+traces.add_task(shellavg(np.sqrt(τ_u1@τ_u1)), name='τ_u1')
+traces.add_task(shellavg(np.sqrt(τ_u2@τ_u2)), name='τ_u2')
+traces.add_task(shellavg(np.sqrt(τ_L@τ_L)), name='τ_L')
 
 # CFL
 if args['--max_dt']:
@@ -262,11 +305,13 @@ report_cadence = 10
 flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
 flow.add_property(np.sqrt(ω@ω), name='Ro')
+flow.add_property(L@ez, name='Lz')
 flow.add_property(np.abs(τ_p), name='|τ_p|')
 flow.add_property(np.abs(τ_S1), name='|τ_S1|')
 flow.add_property(np.abs(τ_S2), name='|τ_S2|')
-flow.add_property(np.sqrt(dot(τ_u1,τ_u1)), name='|τ_u1|')
-flow.add_property(np.sqrt(dot(τ_u2,τ_u2)), name='|τ_u2|')
+flow.add_property(np.sqrt(τ_u1@τ_u1), name='|τ_u1|')
+flow.add_property(np.sqrt(τ_u2@τ_u2), name='|τ_u2|')
+flow.add_property(np.sqrt(τ_L@τ_L), name='|τ_L|')
 
 # Main loop
 try:
@@ -277,9 +322,10 @@ try:
         if solver.iteration > 0 and solver.iteration % report_cadence == 0:
             max_Re = flow.max('Re')
             avg_Ro = flow.grid_average('Ro')
+            int_Lz = flow.volume_integral('Lz')
             max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_S1|'), flow.max('|τ_S2|'), flow.max('|τ_p|')])
-
-            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, τ={:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, max_τ))
+            max_τ_L = flow.max('|τ_L|')
+            logger.info('Iteration={:d}, Time={:.2e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, Lz={:.1e}, τ={:.1e},{:.1e}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, int_Lz, max_τ, max_τ_L))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise

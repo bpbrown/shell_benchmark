@@ -5,15 +5,21 @@ currently implemented benchmarks are:
     c2000       Christensen et al 2000, case 0, Boussinesq
     j2011       Jones et al 2011, hydro case, anelastic
 
+currently implemented radial bases are:
+    Chebyshev
+    Legendre
+
 Usage:
     plot_L_cons_ncc.py [options]
 
 Options:
     --benchmark=<bench>  Benchmark to test [default: c2000]
 
+    --basis=<basis>      Radial polynomials to use [default: Chebyshev]
+
     --Nr=<Nr>            Radial coeffs  [default: 128]
     --ncc_cutoff=<ncc>   Amplitude to truncate NCC terms [default: 1e-10]
-    --dealias=<dealias>  Padding for ncc grid computation [default: 3/2]
+    --dealias=<dealias>  Padding for ncc grid computation [default: 4]
 
     --label=<label>      Optional additional label for figures
 """
@@ -22,7 +28,7 @@ import dedalus.public as de
 
 dtype = np.float64
 
-def calculate_ncc(Nr, benchmark='c2000', dealias=3/2):
+def calculate_ncc(Nr, benchmark='c2000', basis='Chebyshev', dealias=3/2):
     if benchmark == 'c2000':
         # Christensen et al. 2000, case 0 benchmark
         Ri = 7/13
@@ -33,22 +39,24 @@ def calculate_ncc(Nr, benchmark='c2000', dealias=3/2):
         Ro = 1/(1-beta)
         Ri = Ro - 1
     else:
-        raise ValueError("benchmark={} is not either 'c2000' or 'j2011'".format(benchmark))
+        raise ValueError("benchmark={:} is not either 'c2000' or 'j2011'".format(benchmark))
 
-    Ntheta = 4
-    Nphi = 2*Ntheta
+    if basis == 'Chebyshev':
+        alpha=(-0.5, 0.5)
+    elif basis == 'Legendre':
+        alpha=(0, 0)
+    else:
+        raise ValueError("basis={:} is not either 'Chebyshev' or 'Legendre'".format(basis))
 
     padded = (1,1,dealias)
 
     # Bases
     coords = de.SphericalCoordinates('phi', 'theta', 'r')
     dist = de.Distributor(coords, dtype=dtype)
-    basis = de.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+    b_ncc = de.ShellBasis(coords, alpha=alpha, shape=(1, 1, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
 
-    phi, theta, r = dist.local_grids(basis, scales=padded)
+    phi, theta, r = dist.local_grids(b_ncc, scales=padded)
 
-    b_ncc = de.ShellBasis(coords, shape=(1, 1, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
-    #b_ncc = basis.radial_basis
     ρ = dist.Field(bases=b_ncc, name='ρ')
     ρ.change_scales(padded)
 
@@ -75,10 +83,11 @@ def calculate_ncc(Nr, benchmark='c2000', dealias=3/2):
     L_cons_ncc.change_scales(padded)
 
     R_avg = (Ro+Ri)/2
-    L_cons_ncc['g'] = ρ['g']*(r/R_avg)**3*np.sqrt((r/Ro-1)*(1-r/Ri))
+    L_cons_ncc['g'] = ρ['g']*(r/R_avg)**3
+    if basis == 'Chebyshev':
+        L_cons_ncc['g'] *= np.sqrt((r/Ro-1)*(1-r/Ri))
 
     L_cons_ncc.change_scales(1)
-
     return L_cons_ncc
 
 if __name__=='__main__':
@@ -93,6 +102,7 @@ if __name__=='__main__':
     args = docopt(__doc__)
 
     benchmark = args['--benchmark']
+    basis = args['--basis']
 
     from fractions import Fraction
     dealias = float(Fraction(args['--dealias']))
@@ -109,7 +119,7 @@ if __name__=='__main__':
 
     L_ncc_set = []
     for Nr in Nr_set:
-        L_ncc_set.append(calculate_ncc(Nr, benchmark=benchmark, dealias=dealias))
+        L_ncc_set.append(calculate_ncc(Nr, basis=basis, benchmark=benchmark, dealias=dealias))
 
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots()
@@ -128,7 +138,7 @@ if __name__=='__main__':
     ax.set_yscale('log')
     ax.set_xscale('log')
     ax.legend()
-    filename = 'L_cons_ncc_{}_Nr{:d}-{:d}'.format(benchmark, Nr_min,Nr_max)
+    filename = 'L_cons_ncc_{}_{}_Nr{:d}-{:d}'.format(basis, benchmark, Nr_min,Nr_max)
     if args['--label']:
         filename += '_{:s}'.format(args['--label'])
     fig.savefig(filename+'.png', dpi=300)
