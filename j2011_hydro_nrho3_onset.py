@@ -11,6 +11,7 @@ Options:
 
     --Legendre              Use Legendre polynomials in radius
 
+    --tol=<tol>             Tolerance for opitimization loop [default: 1e-5]
     --eigs=<eigs>           Target number of eigenvalues to search for [default: 20]
     --ncc_cutoff=<ncc>      Amplitude cutoff for NCCs [default: 1e-8]
 
@@ -34,12 +35,13 @@ ncc_cutoff = float(args['--ncc_cutoff'])
 beta = 0.35
 Ekman = 2e-3
 Prandtl = 1
-Rayleigh = 62000 #61621.682
+#Rayleigh = 61621.682
 n = 2
 Nrho = 3
 m_crit = 10
 
 N_eigs = int(float(args['--eigs']))
+tol = float(args['--tol'])
 
 Nr = int(args['--Nr'])
 Ntheta = int(args['--Ntheta'])
@@ -64,7 +66,6 @@ zeta_out = (beta + 1) / ( beta*np.exp(Nrho/n) + 1 )
 zeta_in  = (1 + beta - zeta_out) / beta
 c0 = (2*zeta_out - beta - 1) / (1 - beta)
 c1 = (1 + beta)*(1 - zeta_out) / (1 - beta)**2
-Di = c1*Prandtl/Rayleigh
 
 # Bases
 coords = de.SphericalCoordinates('phi', 'theta', 'r')
@@ -144,8 +145,9 @@ logger.info("NCC expansions:")
 for ncc in [grad_log_rho0, grad_log_p0, S0, g]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
+Rayleigh = dist.Field(name='Rayleigh')
 omega = dist.Field(name='omega')
-dt = lambda A: -1j*omega*A # adopts Jones et al 2009 definition
+dt = lambda A: omega*A
 # Problem
 problem = de.EVP([p, S, u, τ_p, τ_S1, τ_S2, τ_u1, τ_u2], eigenvalue=omega, namespace=locals())
 problem.add_equation("div(u) + u@grad_log_rho0 + τ_p + lift(τ_u2,-1)@er = 0")
@@ -162,16 +164,48 @@ problem.add_equation("integ(p) = 0") # Pressure gauge
 # Solver
 solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
 
-target_m = 10
-subproblem = solver.subproblems_by_group[(target_m, None, None)]
-
-Jones_et_al_2011 = 101.381 + 0*1j
+Jones_et_al_2011_Rayleigh = 61621.682
+Jones_et_al_2011_ω = -1j*101.381 + 0 # adjusts Jones et al 2009 convention of dt = -1j*omega to ours
 target = 0 + 0*1j
-solver.solve_sparse(subproblem, N=N_eigs, target=target)
-i_evals = np.argsort(solver.eigenvalues.real)
-evals = solver.eigenvalues[i_evals]
+
+def compute_eigenvalues(log_Ra_i, target_m=10):
+    Rayleigh['g'] = np.exp(log_Ra_i)
+    current_Ra = Rayleigh['g'][0,0,0].real
+    logger.info('m = {:d}, Ra = {:.6g}'.format(target_m, current_Ra))
+    subproblem = solver.subproblems_by_group[(target_m, None, None)]
+    solver.solve_sparse(subproblem, N=N_eigs, target=target, rebuild_matrices=True)
+    i_evals = np.argsort(solver.eigenvalues.real)
+    evals = solver.eigenvalues[i_evals]
+    evals /= np.sqrt(current_Ra)
+    return(evals)
+
+def peak_growth_rate(*args):
+    evals = compute_eigenvalues(*args)
+    peak_eval = evals[-1]
+    # flip sign so minimize finds maximum
+    return np.abs(peak_eval.real)
+
+import scipy.optimize as sciop
+log_Ra_i = np.log(6e4) # search in log Ra
+bounds = sciop.Bounds(lb=np.log(1e4), ub=np.log(1e5))
+result = sciop.minimize(peak_growth_rate, log_Ra_i, bounds=bounds, tol=tol)
+logger.info(result)
+
+logger.info('optimization complete, solving for critical modes')
+evals = compute_eigenvalues(result.x[0])
+critical_Ra = np.exp(result.x[0]).real
+logger.info("Jones et al 2011 critical Ra: {:.6g}".format(Jones_et_al_2011_Rayleigh))
+logger.info("                 critical Ra: {:.6g}".format(critical_Ra))
+logger.info("       fractional difference: {:.2g}".format(np.abs(critical_Ra-Jones_et_al_2011_Rayleigh)/np.abs(critical_Ra))
+logger.info("")
+Jones_et_al_2011_ω /= np.sqrt(Jones_et_al_2011_Rayleigh)
+logger.info("Jones et al 2011  eigenvalue: {:.6g}, {:.6g}i".format(Jones_et_al_2011_ω.real, Jones_et_al_2011_ω.imag))
+logger.info("         critical eigenvalue: {:.6g}, {:.6g}i".format(evals[-1].real, evals[-1].imag))
+logger.info("       fractional difference: {:.2g}".format(np.abs(evals[-1]-Jones_et_al_2011_ω)/np.abs(evals[-1])))
+logger.info("")
 logger.info("eigenvalues:\n{:}".format(evals))
 
+target_m=10
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
 ax.scatter(evals.real, evals.imag, alpha=0.5, zorder=5)
@@ -180,7 +214,7 @@ ax.axvline(x=0, linestyle='dashed', color='xkcd:dark grey', alpha=0.5, zorder=0)
 ax.set_title('m = {:d}, '.format(target_m)+r'$N_\theta = '+'{:d}'.format(Ntheta)+r'$, $N_r = '+'{:d}'.format(Nr)+r'$')
 ax.set_xlabel(r'$\omega_R$')
 ax.set_ylabel(r'$\omega_I$')
-ax.scatter(Jones_et_al_2011.real, Jones_et_al_2011.imag, marker='s', label='Jones et. al (2011)', alpha=0.2, color='xkcd:dark red', zorder=2)
+ax.scatter(Jones_et_al_2011_ω.real, Jones_et_al_2011_ω.imag, marker='s', label='Jones et. al (2011)', alpha=0.2, color='xkcd:dark red', zorder=2, s=100)
 ax.scatter(target.real, target.imag, marker='x', label='target',  color='xkcd:dark green', alpha=0.2, zorder=1)
 ax.legend()
 fig_filename = 'eigenspectrum'
