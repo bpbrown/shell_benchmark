@@ -196,7 +196,7 @@ evals = compute_eigenvalues(result.x[0])
 critical_Ra = np.exp(result.x[0]).real
 logger.info("Jones et al 2011 critical Ra: {:.6g}".format(Jones_et_al_2011_Rayleigh))
 logger.info("                 critical Ra: {:.6g}".format(critical_Ra))
-logger.info("       fractional difference: {:.2g}".format(np.abs(critical_Ra-Jones_et_al_2011_Rayleigh)/np.abs(critical_Ra))
+logger.info("       fractional difference: {:.2g}".format(np.abs(critical_Ra-Jones_et_al_2011_Rayleigh)/np.abs(critical_Ra)))
 logger.info("")
 Jones_et_al_2011_ω /= np.sqrt(Jones_et_al_2011_Rayleigh)
 logger.info("Jones et al 2011  eigenvalue: {:.6g}, {:.6g}i".format(Jones_et_al_2011_ω.real, Jones_et_al_2011_ω.imag))
