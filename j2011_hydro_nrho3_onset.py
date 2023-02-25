@@ -188,7 +188,7 @@ def peak_growth_rate(*args):
 import scipy.optimize as sciop
 log_Ra_i = np.log(6e4) # search in log Ra
 bounds = sciop.Bounds(lb=np.log(1e4), ub=np.log(1e5))
-result = sciop.minimize(peak_growth_rate, log_Ra_i, bounds=bounds, tol=tol)
+result = sciop.minimize(peak_growth_rate, log_Ra_i, bounds=bounds, tol=tol, method='Nelder-Mead')
 logger.info(result)
 
 logger.info('optimization complete, solving for critical modes')
