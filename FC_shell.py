@@ -8,6 +8,7 @@ Usage:
 Options:
     --Ntheta=<Ntheta>       Latitude coeffs [default: 64]
     --Nr=<Nr>               Radial coeffs  [default: 64]
+    --mesh=<mesh>           Processor mesh for 3-D runs; if not set a sensible guess will be made
 
     --Mach=<Ma>             Mach number [default: 1e-2]
     --gamma=<gamma>         Ideal gas gamma [default: 5/3]
@@ -37,16 +38,30 @@ ncpu = MPI.COMM_WORLD.size
 from docopt import docopt
 args = docopt(__doc__)
 
+mesh = args['--mesh']
+if mesh is not None:
+    mesh = mesh.split(',')
+    mesh = [int(mesh[0]), int(mesh[1])]
+else:
+    log2 = np.log2(ncpu)
+    logger.info("log2({:d}) = {:}".format(ncpu, log2))
+    if log2 == int(log2):
+        logger.info(int(2**np.ceil(log2/2)))
+        logger.info(int(2**np.floor(log2/2)))
+        mesh = [int(2**np.ceil(log2/2)),int(2**np.floor(log2/2))]
+logger.info("running on processor mesh={}".format(mesh))
+
+
 from fractions import Fraction
 
 ncc_cutoff = float(args['--ncc_cutoff'])
 
 # parameters
 beta = 0.35
-Ekman = 2e-3
+Ekman = float(args['--Ekman'])
+Rayleigh = float(args['--Rayleigh'])
 Prandtl = 1
 Nrho = nρ = 3
-m_crit = 10
 
 Ma = float(args['--Mach'])
 Ma2 = Ma*Ma
@@ -63,10 +78,11 @@ Ntheta = int(args['--Ntheta'])
 Nphi = 2*Ntheta
 
 dealias = 3/2
-dtype = np.complex128
+dtype = np.float64
 
 data_dir = sys.argv[0].split('.py')[0]
 data_dir += '_Ma{}'.format(args['--Mach'])
+data_dir += ''
 data_dir += '_Th{}_R{}'.format(args['--Ntheta'], args['--Nr'])
 if args['--label']:
     data_dir += '_{:s}'.format(args['--label'])
@@ -88,6 +104,7 @@ else:
     nh = nρ/m_poly
     c0 = -(Ri-Ro*np.exp(-nh))/(Ro-Ri)
     c1 = Ri*Ro/(Ro-Ri)*(1-np.exp(-nh))
+Di = c1*Prandtl/Rayleigh
 
 logger.info('Ri = {:}, Ro = {:}'.format(Ri, Ro))
 
@@ -96,9 +113,10 @@ coords = de.SphericalCoordinates('phi', 'theta', 'r')
 dist = de.Distributor(coords, dtype=dtype)
 if args['--Legendre']:
     basis = de.ShellBasis(coords, alpha=(0,0), shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dtype=dtype)
+    basis_ncc = de.ShellBasis(coords, alpha=(0,0), shape=(1, 1, Nr), radii=(Ri, Ro), dtype=dtype)
 else:
     basis = de.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dtype=dtype)
-basis_ncc = basis.meridional_basis
+    basis_ncc = de.ShellBasis(coords, shape=(1, 1, Nr), radii=(Ri, Ro), dtype=dtype)
 b_inner = basis.S2_basis(radius=r_inner)
 b_outer = basis.S2_basis(radius=r_outer)
 s2_basis = basis.S2_basis()
@@ -161,6 +179,8 @@ viscous_terms = div(e) + e@grad_log_rho0 - 2/3*grad(div(u)) - 2/3*grad_log_rho0*
 
 trace_e = trace(e)
 
+Phi = trace(e@e) - 1/3*(trace_e*trace_e)
+
 u_r_inner = radial(u(r=r_inner))
 u_r_outer = radial(u(r=r_outer))
 u_perp_inner = radial(angular(e(r=r_inner)))
@@ -173,19 +193,20 @@ scale = r_g*T
 scale_h = r_g
 scale_g = de.Grid(scale).evaluate()
 scale_h_g = de.Grid(r_g).evaluate()
-
+h0_g = de.Grid(h0).evaluate()
+grad_θ0_g = de.Grid(grad_θ0).evaluate()
 
 logger.info("NCC expansions:")
 for ncc in [scale*grad_log_rho0, scale_h*h0, scale_h*grad_h0, scale*grad_S0, scale*grad_θ0, scale]:
 #for ncc in [grad_log_rho0, h0, grad_h0, grad_S0, grad_θ0, T]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
-g = dist.VectorField(coords, bases=basis_ncc, name='g')
-g['g'][2] = 1/r**2
-
 scrC = 1/(gamma-1)/Ma2
 #scrC = 1/(gamma-1)*Co2/Ma2
 #Co2 = Rayleigh*Ekman**2/Prandtl
+Prinv_g = 1/Prandtl
+Di_zetainv_g = de.Grid((Di/2)*1/T)
+
 logger.info("scrC = {:}".format(scrC))
 # Problem  Rayleigh/Prandtl*scrC*(h0*grad(θ) + grad_h0*θ - h0*grad(S)
 problem = de.IVP([u, Υ, θ, S, τ_u1, τ_u2, τ_S1, τ_S2], namespace=locals())
@@ -201,9 +222,7 @@ problem.add_equation("u_r_outer = 0")
 problem.add_equation("u_perp_outer = 0")
 
 # Solver
-solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
-
-# Solver
+timestepper = de.RK222
 solver = problem.build_solver(timestepper, ncc_cutoff=ncc_cutoff)
 solver.stop_sim_time = stop_sim_time
 # for testing
