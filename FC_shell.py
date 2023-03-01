@@ -56,7 +56,7 @@ from fractions import Fraction
 ncc_cutoff = float(args['--ncc_cutoff'])
 
 # parameters
-beta = 0.35
+beta = 0.7
 Ekman = float(args['--Ekman'])
 Rayleigh = float(args['--Rayleigh'])
 Prandtl = 1
@@ -238,14 +238,13 @@ if args['--niter']:
 # Initial conditions
 # take 𝓁=m spherical harmonic perturbations at 𝓁=[1,19],
 # with a radial bump function, and a 𝓁=0 background
-amp = 1e-2*Ma2
 rnorm = 2*np.pi/(Ro - Ri)
 rfunc = (1 - np.cos(rnorm*(r-Ri)))
 S['g'] = 0
 for 𝓁, amp in zip([1, 19], [1e-3, 1e-2]):
     norm = 1/(2**𝓁*np.math.factorial(𝓁))*np.sqrt(np.math.factorial(2*𝓁+1)/(4*np.pi))
     S['g'] += amp*norm*rfunc*(np.cos(𝓁*phi)+np.sin(𝓁*phi))*np.sin(theta)**𝓁
-
+S['g'] *= Ma2
 S.change_scales(1)
 θ['g'] = γ*S['g']
 
@@ -316,11 +315,11 @@ if args['--max_dt']:
 else:
     max_timestep = Ekman/10
 
-CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=0.1,
+CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.2, threshold=0.1,
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
-report_cadence = 100
+report_cadence = 10
 # Flow properties
 flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
