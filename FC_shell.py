@@ -20,8 +20,10 @@ Options:
 
     --jones                 Use the Jones polytrope
 
-    --tol=<tol>             Tolerance for opitimization loop [default: 1e-5]
-    --eigs=<eigs>           Target number of eigenvalues to search for [default: 20]
+    --max_dt=<max_dt>       Largest timestep
+    --end_time=<end_time>   End of simulation, diffusion times [default: 3]
+    --niter=<niter>         How many iterations to run for
+
     --ncc_cutoff=<ncc>      Amplitude cutoff for NCCs [default: 1e-8]
 
     --label=<label>         Additional label for run output directory
@@ -44,10 +46,7 @@ if mesh is not None:
     mesh = [int(mesh[0]), int(mesh[1])]
 else:
     log2 = np.log2(ncpu)
-    logger.info("log2({:d}) = {:}".format(ncpu, log2))
     if log2 == int(log2):
-        logger.info(int(2**np.ceil(log2/2)))
-        logger.info(int(2**np.floor(log2/2)))
         mesh = [int(2**np.ceil(log2/2)),int(2**np.floor(log2/2))]
 logger.info("running on processor mesh={}".format(mesh))
 
@@ -69,9 +68,6 @@ Ma2 = Ma*Ma
 m_ad = 1/(γ-1)
 ε = Ma2
 m_poly = m_ad - ε
-
-N_eigs = int(float(args['--eigs']))
-tol = float(args['--tol'])
 
 Nr = int(args['--Nr'])
 Ntheta = int(args['--Ntheta'])
@@ -110,7 +106,7 @@ logger.info('Ri = {:}, Ro = {:}'.format(Ri, Ro))
 
 # Bases
 coords = de.SphericalCoordinates('phi', 'theta', 'r')
-dist = de.Distributor(coords, dtype=dtype)
+dist = de.Distributor(coords, dtype=dtype, mesh=mesh)
 if args['--Legendre']:
     basis = de.ShellBasis(coords, alpha=(0,0), shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dtype=dtype)
     basis_ncc = de.ShellBasis(coords, alpha=(0,0), shape=(1, 1, Nr), radii=(Ri, Ro), dtype=dtype)
@@ -132,6 +128,7 @@ S = dist.Field(name='S', bases=basis)
 τ_u1 = dist.VectorField(coords, name='τ_u1', bases=b_outer)
 τ_u2 = dist.VectorField(coords, name='τ_u2', bases=b_inner)
 
+curl = lambda A: de.Curl(A)
 grad = lambda A: de.Gradient(A, coords)
 div = lambda A: de.Divergence(A)
 cross = lambda A, B: de.CrossProduct(A, B)
@@ -142,7 +139,15 @@ angular = lambda A: de.AngularComponent(A, index=1)
 
 # Substitutions
 phi, theta, r = dist.local_grids(basis)
-ez = dist.VectorField(coords, bases=basis_ncc, name='ez')
+ex = dist.VectorField(coords, bases=basis, name='ex')
+ex['g'][2] = np.sin(theta)*np.cos(phi)
+ex['g'][1] = np.cos(theta)*np.cos(phi)
+ex['g'][0] = -np.sin(phi)
+ey = dist.VectorField(coords, bases=basis, name='ey')
+ey['g'][2] = np.sin(theta)*np.sin(phi)
+ey['g'][1] = np.cos(theta)*np.sin(phi)
+ey['g'][0] = np.cos(phi)
+ez = dist.VectorField(coords, bases=basis, name='ez')
 ez['g'][2] = np.cos(theta)
 ez['g'][1] = -np.sin(theta)
 
@@ -224,6 +229,7 @@ problem.add_equation("u_perp_outer = 0")
 # Solver
 timestepper = de.RK222
 solver = problem.build_solver(timestepper, ncc_cutoff=ncc_cutoff)
+stop_sim_time = float(args['--end_time'])
 solver.stop_sim_time = stop_sim_time
 # for testing
 if args['--niter']:
@@ -245,18 +251,18 @@ S.change_scales(1)
 
 
 # Analysis
-eφ = d.VectorField(c, bases=b)
+eφ = dist.VectorField(coords, bases=basis)
 eφ['g'][0] = 1
-eθ = d.VectorField(c, bases=b)
+eθ = dist.VectorField(coords, bases=basis)
 eθ['g'][1] = 1
-er = d.VectorField(c, bases=b)
+er = dist.VectorField(coords, bases=basis)
 er['g'][2] = 1
 
-ur = dot(u, er)
-uθ = dot(u, eθ)
-uφ = dot(u, eφ)
+ur = u@er
+uθ = u@eθ
+uφ = u@eφ
 
-ρ_cyl = d.Field(bases=b)
+ρ_cyl = dist.Field(bases=basis)
 ρ_cyl['g'] = r*np.sin(theta)
 Ωz = uφ/ρ_cyl # this is not ω_z; misses gradient terms; this is angular differential rotation.
 
@@ -267,9 +273,13 @@ azavg = lambda A: de.Average(A, coords.coords[0])
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
 sphere_integ = lambda A: de.Average(A, coords.S2coordsys)*4*np.pi
+
+rvec = dist.VectorField(coords, bases=basis, name='rvec')
+rvec['g'][2] = r
+
 L = rho0*cross(rvec,u)
 ω = curl(u)*Ekman/2
-
+enstrophy = ω@ω
 
 slices = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=out_cadence, max_writes=10)
 slices.add_task(S(r=Ro*0.98), name='S_r_0.98')
@@ -292,7 +302,7 @@ traces.add_task(np.sqrt(volavg(ω@ω)), name='Ro')
 traces.add_task(de.integ(L@ex), name='Lx')
 traces.add_task(de.integ(L@ey), name='Ly')
 traces.add_task(de.integ(L@ez), name='Lz')
-traces.add_task(-1/Prandtl*zeta_out**(n+1)*Ro**2*sphere_integ(de.radial(de.grad(S)(r=Ro))), name='Luminosity')
+#traces.add_task(-1/Prandtl*zeta_out**(n+1)*Ro**2*sphere_integ(de.radial(de.grad(S)(r=Ro))), name='Luminosity')
 
 traces.add_task(np.abs(τ_p), name='τ_p')
 traces.add_task(shellavg(np.abs(τ_S1)), name='τ_S1')
@@ -310,7 +320,7 @@ CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
-report_cadence = 1
+report_cadence = 100
 # Flow properties
 flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
@@ -318,8 +328,8 @@ flow.add_property(np.sqrt(ω@ω), name='Ro')
 flow.add_property(np.abs(τ_p), name='|τ_p|')
 flow.add_property(np.abs(τ_S1), name='|τ_S1|')
 flow.add_property(np.abs(τ_S2), name='|τ_S2|')
-flow.add_property(np.sqrt(dot(τ_u1,τ_u1)), name='|τ_u1|')
-flow.add_property(np.sqrt(dot(τ_u2,τ_u2)), name='|τ_u2|')
+flow.add_property(np.sqrt(τ_u1@τ_u1), name='|τ_u1|')
+flow.add_property(np.sqrt(τ_u2@τ_u2), name='|τ_u2|')
 
 # Main loop
 try:
