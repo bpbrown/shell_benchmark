@@ -12,7 +12,11 @@ Options:
     --Mach=<Ma>             Mach number [default: 1e-2]
     --gamma=<gamma>         Ideal gas gamma [default: 5/3]
 
+    --Rayeigh_init=<Ra>     Initial guess for Rayleigh [default: 3e4]
+
     --Legendre              Use Legendre polynomials in radius
+
+    --jones                 Use the Jones polytrope
 
     --tol=<tol>             Tolerance for opitimization loop [default: 1e-5]
     --eigs=<eigs>           Target number of eigenvalues to search for [default: 20]
@@ -42,7 +46,7 @@ Ekman = 2e-3
 Prandtl = 1
 #Rayleigh = 61621.682
 n = 2
-Nrho = 3
+Nrho = nρ = 3
 m_crit = 10
 
 Ma = float(args['--Mach'])
@@ -74,10 +78,15 @@ Ri = r_inner = Ro - 1
 
 logger.info('Ri = {:}, Ro = {:}'.format(Ri, Ro))
 
-zeta_out = (beta + 1) / ( beta*np.exp(Nrho/n) + 1 )
-zeta_in  = (1 + beta - zeta_out) / beta
-c0 = (2*zeta_out - beta - 1) / (1 - beta)
-c1 = (1 + beta)*(1 - zeta_out) / (1 - beta)**2
+if args['--jones']:
+    zeta_out = (beta + 1) / ( beta*np.exp(Nrho/n) + 1 )
+    zeta_in  = (1 + beta - zeta_out) / beta
+    c0 = (2*zeta_out - beta - 1) / (1 - beta)
+    c1 = (1 + beta)*(1 - zeta_out) / (1 - beta)**2
+else:
+    nh = nρ/n
+    c0 = -(Ri-Ro*np.exp(-nh))/(Ro-Ri)
+    c1 = Ri*Ro/(Ro-Ri)*(1-np.exp(-nh))
 
 # Bases
 coords = de.SphericalCoordinates('phi', 'theta', 'r')
@@ -228,7 +237,8 @@ def peak_growth_rate(*args):
     return np.abs(peak_eval.real)
 
 import scipy.optimize as sciop
-log_Ra_i = np.log(1e4) # search in log Ra
+Rayleigh_init = float(args['--Rayeigh_init'])
+log_Ra_i = np.log(Rayleigh_init) # search in log Ra
 #bounds = sciop.Bounds(lb=np.log(1e4), ub=np.log(1e6)) # bounds=bounds,
 result = sciop.minimize(peak_growth_rate, log_Ra_i, tol=tol, method='Nelder-Mead')
 logger.info(result)
