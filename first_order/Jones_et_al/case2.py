@@ -75,11 +75,11 @@ s2_basis = b.S2_basis()
 phi, theta, r = d.local_grids(b)
 
 # problem variables
-u   = d.VectorField(c,name='u',bases=b)
-A   = d.VectorField(c,name='A',bases=b)
-p   = d.Field(name='p',bases=b)
-phi = d.Field(name='phi',bases=b)
-S   = d.Field(name='S',bases=b)
+u         = d.VectorField(c,name='u',bases=b)
+A         = d.VectorField(c,name='A',bases=b)
+p         = d.Field(name='p',bases=b)
+phi_shell = d.Field(name='phi_shell',bases=b)
+S         = d.Field(name='S',bases=b)
 
 tau_u1 = d.VectorField(c,name='tau_u1',bases=s2_basis)
 tau_u2 = d.VectorField(c,name='tau_u2',bases=s2_basis)
@@ -172,15 +172,15 @@ ell_func_outer = lambda ell: ell+1
 ellp1mult = lambda A: d3.SphericalEllProduct(A, c, ell_func_outer)
 
 # Problem
-problem = d3.IVP([u, p, tau_u1, tau_u2, tau_p, S, tau_S1, tau_S2,A ,tau_A1 ,tau_A2 ,phi ,tau_phi], namespace=locals())
+problem = d3.IVP([u, p, tau_u1, tau_u2, tau_p, S, tau_S1, tau_S2,A ,tau_A1 ,tau_A2 ,phi_shell ,tau_phi], namespace=locals())
 problem.add_equation("dt(u) + grad(p) - Pm*Pm*Ra/Pr*g*S - Pm*viscous_terms + lift(tau_u2,-1) = - dot(u, e) - 2*Pm/Ek*cross(ez, u) + Pm/Ek*rho0inv*cross(J,B)")
 problem.add_equation("dot(gradlogrho0, u) + trace(grad_u) + tau_p = 0")
 problem.add_equation("dt(S) - Pm/Pr*div(grad_S) - Pm/Pr*dot(gradlogp0, grad_S) + lift(tau_S2,-1) = - dot(u, grad(S)) + (Di/2)*(zetainv*(Phi)) + Di*p0inv/Ek*dot(J,J)")
 problem.add_equation("integ(p)=0")
 
-problem.add_equation("dt(A) - div(grad_A) + grad(phi) + lift(tau_A2,-1) = cross(u, B)")
+problem.add_equation("dt(A) - div(grad_A) + grad(phi_shell) + lift(tau_A2,-1) = cross(u, B)")
 problem.add_equation("trace(grad_A) + tau_phi = 0")
-problem.add_equation("integ(phi) = 0")
+problem.add_equation("integ(phi_shell) = 0")
 
 problem.add_equation("radial(u(r=r_inner)) = 0")
 problem.add_equation("angular(radial(e(r=r_inner),0),0) = 0")
