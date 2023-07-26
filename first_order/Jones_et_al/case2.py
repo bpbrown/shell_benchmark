@@ -219,8 +219,8 @@ else:
     A['g'] *= 1./np.sqrt(ME_IC)
 
 timeseries = solver.evaluator.add_file_handler('case2_timeseries', sim_dt = 1e-5, mode='append')
-timeseries.add_task(0.5*integ(rho0*d3.dot(u,u)),name='KE')
-timeseries.add_task(0.5*integ(d3.dot(B,B))*Pm/Ek, name='ME')
+timeseries.add_task(0.5*d3.integ(rho0*d3.dot(u,u)),name='KE')
+timeseries.add_task(0.5*d3.integ(d3.dot(B,B))*Pm/Ek, name='ME')
 
 snapshots = solver.evaluator.add_file_handler('case2_snapshots', sim_dt = 0.35, mode='append')
 snapshots.add_task(u,name='u')

@@ -183,8 +183,8 @@ else:
     S['g'] += (zeta_out**(-2) - zetag**(-2)) / (zeta_out**(-2) - zeta_in**(-2))
 
 timeseries = solver.evaluator.add_file_handler('case1_timeseries', sim_dt = 1e-5, mode='append')
-timeseries.add_task(0.5*integ(rho0*d3.dot(u,u)),name='KE')
-timeseries.add_task(0.5*integ(d3.dot(B,B))*Pm/Ek, name='ME')
+timeseries.add_task(0.5*d3.integ(rho0*d3.dot(u,u)),name='KE')
+timeseries.add_task(0.5*d3.integ(d3.dot(B,B))*Pm/Ek, name='ME')
 
 snapshots = solver.evaluator.add_file_handler('case1_snapshots', sim_dt = 0.35, mode='append')
 snapshots.add_task(u,name='u')
