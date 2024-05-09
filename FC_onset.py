@@ -171,7 +171,7 @@ r_g.name='r'
 scale = r_g*T
 scale_h = r_g
 logger.info("NCC expansions:")
-for ncc in [scale*grad_log_rho0, scale_h*h0, scale_h*grad_h0, scale*grad_S0, scale*grad_θ0, scale]:
+for ncc in [scale*grad_log_rho0, scale_h*h0, scale_h*grad_h0, scale*grad_S0, scale*grad_θ0, scale*rho0, scale]:
 #for ncc in [grad_log_rho0, h0, grad_h0, grad_S0, grad_θ0, T]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
