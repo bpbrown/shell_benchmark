@@ -116,6 +116,10 @@ lift = lambda A, n: de.Lift(A, bk2, n)
 grad_u = de.grad(u) + rvec1*lift(τ_u2, -1) # First-order reduction
 grad_T = de.grad(T) + rvec1*lift(τ_T2, -1) # First-order reduction
 
+τ_d = trace(rvec1*lift(τ_u2, -1)) + τ_p
+τ_u = - div(rvec1*lift(τ_u2, -1)) + lift(τ_u1, -1)
+τ_T = - div(rvec1*lift(τ_T2, -1))/Prandtl + lift(τ_T1, -1)
+
 # Problem
 problem = de.IVP([p, T, u, τ_p, τ_T1, τ_T2, τ_u1, τ_u2], namespace=locals())
 problem.add_equation("trace(grad_u) + τ_p = 0")

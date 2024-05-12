@@ -127,11 +127,17 @@ lift = lambda A, n: de.Lift(A, bk2, n)
 
 τ_L = dist.VectorField(coords, bases=basis, name='τ_L')
 
+τ_d = τ_p + lift1(τ_u2,-1)@er
+τ_T = lift(τ_T1, -1) + lift(τ_T2, -2)
+τ_u = lift(τ_u1, -1) + lift(τ_u2, -2)
+
+taus = [τ_p, τ_T1, τ_T2, τ_u1, τ_u2]
+vars = [p, T, u]
 # Problem
-problem = de.IVP([p, T, u, τ_p, τ_T1, τ_T2, τ_u1, τ_u2], namespace=locals())
-problem.add_equation("div(u) + τ_p + lift1(τ_u2,-1)@er = 0")
-problem.add_equation("dt(T) - lap(T)/Prandtl + lift(τ_T1, -1) + lift(τ_T2, -2) = -(u@grad(T))")
-problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, curl(u) + f)")
+problem = de.IVP(vars+taus, namespace=locals())
+problem.add_equation("div(u) + τ_d = 0")
+problem.add_equation("dt(T) - lap(T)/Prandtl + τ_T = -(u@grad(T))")
+problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + τ_u = cross(u, curl(u) + f)")
 problem.add_equation("T(r=Ri) = 1")
 problem.add_equation("u(r=Ri) = 0")
 problem.add_equation("T(r=Ro) = 0")
@@ -152,7 +158,7 @@ A = 0.1
 T['g'] = Ri*Ro/r - Ri + 210*A/np.sqrt(17920*np.pi)*(1-3*χ**2+3*χ**4-χ**6)*np.sin(theta)**4*np.cos(4*phi)
 
 # Analysis
-out_cadence = 1e-2
+out_cadence = 5e-3
 
 dot = lambda A, B: de.DotProduct(A, B)
 cross = lambda A, B: de.CrossProduct(A, B)
@@ -160,20 +166,21 @@ div = lambda A: de.Divergence(A, index=0)
 curl = lambda A: de.Curl(A)
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
+avg = lambda A: de.integ(A)/V
 integ = lambda A: de.integ(A)
 
 L = cross(rvec, u)*Ekman
 ω = curl(u)*Ekman/2
 PE = Rayleigh/Ekman*T
 
-snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=1e-1, max_writes=10)
+snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=5e-1, max_writes=10)
 snapshots.add_task(T(r=Ro), scales=dealias, name='T_r_outer')
 snapshots.add_task(T(r=Ri), scales=dealias, name='T_r_inner')
 snapshots.add_task(T(r=(Ri+Ro)/2), scales=dealias, name='T_r_mid')
 snapshots.add_task(T(phi=0), scales=dealias, name='T_phi_start')
 snapshots.add_task(T(phi=3*np.pi/2), scales=dealias, name='T_phi_end')
 
-profiles = solver.evaluator.add_file_handler(data_dir+'/profiles', sim_dt=out_cadence, max_writes=100)
+profiles = solver.evaluator.add_file_handler(data_dir+'/profiles', sim_dt=out_cadence, max_writes=None)
 profiles.add_task(u(r=(Ri+Ro)/2,theta=np.pi/2), name='u_profile')
 profiles.add_task(T(r=(Ri+Ro)/2,theta=np.pi/2), name='T_profile')
 
@@ -194,6 +201,11 @@ traces.add_task(integ(dot(L,ez)), name='Lz')
 traces.add_task(integ(-x*div(L)), name='Λx')
 traces.add_task(integ(-y*div(L)), name='Λy')
 traces.add_task(integ(-z*div(L)), name='Λz')
+traces.add_task(np.sqrt(avg(div(u)**2)), name='divu')
+traces.add_task(np.sqrt(avg(τ_d**2)), name='τ_d')
+traces.add_task(np.sqrt(avg(τ_T**2)), name='τ_T')
+traces.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
+
 
 # CFL
 if args['--max_dt']:
@@ -205,7 +217,7 @@ CFL = de.CFL(solver, initial_dt=max_timestep, cadence=1, safety=0.35, threshold=
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
-report_cadence = 10
+report_cadence = 100
 # Flow properties
 flow = de.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(np.sqrt(u@u), name='Re')
@@ -217,8 +229,9 @@ flow.add_property(np.abs(τ_T2), name='|τ_T2|')
 flow.add_property(np.sqrt(dot(τ_u1,τ_u1)), name='|τ_u1|')
 flow.add_property(np.sqrt(dot(τ_u2,τ_u2)), name='|τ_u2|')
 flow.add_property(np.sqrt(dot(τ_L,τ_L)), name='|τ_L|')
-
+flow.add_property(np.abs(div(u)), name='|div_u|')
 # Main loop
+
 try:
     logger.info('Starting main loop')
     while solver.proceed:
@@ -230,8 +243,11 @@ try:
             Lz_int = flow.volume_integral('Lz')
             max_τ = np.max([flow.max('|τ_u1|'), flow.max('|τ_u2|'), flow.max('|τ_T1|'), flow.max('|τ_T2|'), flow.max('|τ_p|'), flow.max('|τ_L|')])
             max_τ_L = flow.max('|τ_L|')
+            div_u_avg = flow.volume_integral('|div_u|')/V
+            div_u_max = flow.max('|div_u|')
 
-            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, Lz={:.1e}, τ={:.2g},{:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, Lz_int, max_τ,max_τ_L))
+
+            logger.info('Iteration={:d}, Time={:.4e}, dt={:.1e}, Ro={:.3g}, max(Re)={:.3g}, Lz={:.1e}, divu={:.1g},{:.1g},  τ={:.2g},{:.2g}'.format(solver.iteration, solver.sim_time, Δt, avg_Ro, max_Re, Lz_int, div_u_avg, div_u_max, max_τ,max_τ_L))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise

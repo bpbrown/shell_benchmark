@@ -74,19 +74,22 @@ fig_E.savefig('{:s}/energies.png'.format(str(output_path)), dpi=300)
 
 fig_tau, ax_tau = plt.subplots(nrows=2, sharex=True)
 for i in range(2):
-    p = ax_tau[i].plot(t, data['τ_u1'], label=r'$\tau_{u1,2}$')
-    ax_tau[i].plot(t, data['τ_u2'], color=p[0].get_color(), linestyle='dashed')
-    if 'τ_T1' in data:
-        p = ax_tau[i].plot(t, data['τ_T1'], label=r'$\tau_{T1,2}$')
-        ax_tau[i].plot(t, data['τ_T2'], color=p[0].get_color(), linestyle='dashed')
-    elif 'τ_S1' in data:
-        p = ax_tau[i].plot(t, data['τ_S1'], label=r'$\tau_{S1,2}$')
-        ax_tau[i].plot(t, data['τ_S2'], color=p[0].get_color(), linestyle='dashed')
-    ax_tau[i].plot(t, data['τ_p'], label=r'$\tau_{p}$')
-    if 'τ_A1' in data:
-        p = ax_tau[i].plot(t, data['τ_A1'], label=r'$\tau_{A1,2}$')
-        ax_tau[i].plot(t, data['τ_A2'], color=p[0].get_color(), linestyle='dashed')
-        ax_tau[i].plot(t, data['τ_φ'], label=r'$\tau_{\phi}$')
+    ax_tau[i].plot(t, data['τ_d'], label=r'$\tau_{d}$')
+    ax_tau[i].plot(t, data['τ_u'], label=r'$\tau_{u}$')
+    ax_tau[i].plot(t, data['τ_T'], label=r'$\tau_{T}$')
+    # p = ax_tau[i].plot(t, data['τ_u1'], label=r'$\tau_{u1,2}$')
+    # ax_tau[i].plot(t, data['τ_u2'], color=p[0].get_color(), linestyle='dashed')
+    # if 'τ_T1' in data:
+    #     p = ax_tau[i].plot(t, data['τ_T1'], label=r'$\tau_{T1,2}$')
+    #     ax_tau[i].plot(t, data['τ_T2'], color=p[0].get_color(), linestyle='dashed')
+    # elif 'τ_S1' in data:
+    #     p = ax_tau[i].plot(t, data['τ_S1'], label=r'$\tau_{S1,2}$')
+    #     ax_tau[i].plot(t, data['τ_S2'], color=p[0].get_color(), linestyle='dashed')
+    # ax_tau[i].plot(t, data['τ_p'], label=r'$\tau_{p}$')
+    # if 'τ_A1' in data:
+    #     p = ax_tau[i].plot(t, data['τ_A1'], label=r'$\tau_{A1,2}$')
+    #     ax_tau[i].plot(t, data['τ_A2'], color=p[0].get_color(), linestyle='dashed')
+    #     ax_tau[i].plot(t, data['τ_φ'], label=r'$\tau_{\phi}$')
     ax_tau[i].plot(t, data['τ_L'], label=r'$\tau_{L}$')
 for ax in ax_tau:
     if subrange:
@@ -99,6 +102,14 @@ ylims = ax_tau[1].get_ylim()
 ax_tau[1].set_ylim(max(1e-14, ylims[0]), ylims[1])
 fig_tau.savefig('{:s}/tau_error.pdf'.format(str(output_path)))
 fig_tau.savefig('{:s}/tau_error.png'.format(str(output_path)), dpi=300)
+
+fig, ax = plt.subplots(figsize=[6,6/1.6])
+ax.plot(t, data['divu'])
+ax.set_xlabel('time')
+ax.set_ylabel(r'$|\nabla \cdot \vec{u}|_2$')
+ax.set_yscale('log')
+fig.tight_layout()
+fig.savefig('{:s}/divu_error.png'.format(str(output_path)), dpi=300)
 
 fig_L, ax_L = plt.subplots(nrows=2, sharex=True)
 ax_L[0].plot(t, data['Lx'], label='Lx')
@@ -155,15 +166,15 @@ ax_r.set_yscale('log') # relies on it being the last instance; poor practice
 fig_f.savefig('{:s}/Re_and_Ro.pdf'.format(str(output_path)))
 fig_f.savefig('{:s}/Re_and_Ro.png'.format(str(output_path)), dpi=300)
 
-benchmark_set = ['KE', 'Ro', 'Re', 'τ_u1', 'τ_u2', 'τ_p']
+benchmark_set = ['KE', 'Ro', 'Re', 'τ_d', 'τ_u', 'τ_T', 'divu']
 if 'ME' in data:
     benchmark_set = [benchmark_set[0], 'ME'] + benchmark_set[1:]
-if 'τ_T1' in data:
-    benchmark_set = benchmark_set[0:-1] + ['τ_T1', 'τ_T2'] + [benchmark_set[-1]]
-elif 'τ_S1' in data:
-    benchmark_set = benchmark_set[0:-1] + ['τ_S1', 'τ_S2'] + [benchmark_set[-1]]
-if 'τ_A1' in data:
-    benchmark_set += ['τ_A1', 'τ_A2', 'τ_φ']
+# if 'τ_T1' in data:
+#     benchmark_set = benchmark_set[0:-1] + ['τ_T1', 'τ_T2'] + [benchmark_set[-1]]
+# elif 'τ_S1' in data:
+#     benchmark_set = benchmark_set[0:-1] + ['τ_S1', 'τ_S2'] + [benchmark_set[-1]]
+# if 'τ_A1' in data:
+#     benchmark_set += ['τ_A1', 'τ_A2', 'τ_φ']
 benchmark_set += ['Lx','Ly','Lz','Λx','Λy','Λz','τ_L']
 
 i_ten = int(0.9*data[benchmark_set[0]].shape[0])
