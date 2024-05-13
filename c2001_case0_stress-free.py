@@ -132,7 +132,7 @@ grad = lambda A: de.Gradient(A, coords)
 trans = lambda A: de.TransposeComponents(A)
 e = grad(u) + trans(grad(u))
 
-m, ell, n = dist.coeff_layout.local_group_arrays(basis.domain, scales=1)
+m, ell, n = dist.coeff_layout.local_group_arrays(basis.domain(dist), scales=1)
 mask = (ell==1)*(n==0)
 
 τ_L = dist.VectorField(coords, bases=basis, name='τ_L')
@@ -158,16 +158,22 @@ logger.info("NCC expansions:")
 for ncc in [L_cons_ncc, rvec]:
     logger.info("{}: {}".format(ncc, np.where(np.abs(ncc['c']) >= ncc_cutoff)[0].shape))
 
+τ_d = τ_p + lift1(τ_u2,-1)@er
+τ_u = lift(τ_u1, -1) + lift(τ_u2, -2) #+ τ_L/Ekman
+τ_T = lift(τ_T1, -1) + lift(τ_T2, -2)
+
+vars = [p, T, u]
+taus = [τ_p, τ_T1, τ_T2, τ_u1, τ_u2]#, τ_L]
 # Problem
-problem = de.IVP([p, T, u, τ_p, τ_T1, τ_T2, τ_u1, τ_u2, τ_L], namespace=locals())
-problem.add_equation("div(u) + τ_p + lift1(τ_u2,-1)@er = 0")
-problem.add_equation("dt(T) - lap(T)/Prandtl + lift(τ_T1, -1) + lift(τ_T2, -2) = -(u@grad(T))")
-problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + τ_L/Ekman + lift(τ_u1, -1) + lift(τ_u2, -2) = cross(u, curl(u) + f)")
-problem.add_equation((L_cons_ncc*u, 0))
-eq = problem.equations[-1]
-eq['LHS'].valid_modes[2] *= mask
-eq['LHS'].valid_modes[0] = False
-eq['LHS'].valid_modes[1] = False
+problem = de.IVP(vars + taus, namespace=locals())
+problem.add_equation("div(u) + τ_d = 0")
+problem.add_equation("dt(T) - lap(T)/Prandtl + τ_T = -(u@grad(T))")
+problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + τ_u = cross(u, curl(u) + f)")
+# problem.add_equation((L_cons_ncc*u, 0))
+# eq = problem.equations[-1]
+# eq['LHS'].valid_modes[2] *= mask
+# eq['LHS'].valid_modes[0] = False
+# eq['LHS'].valid_modes[1] = False
 
 problem.add_equation("T(r=Ri) = 1")
 problem.add_equation("radial(u(r=Ri)) = 0")
