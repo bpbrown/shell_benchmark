@@ -159,22 +159,21 @@ for ncc in [L_cons_ncc, rvec]:
     logger.info("{}: {}".format(ncc, np.where(np.abs(ncc['c']) >= ncc_cutoff)[0].shape))
 
 τ_d = τ_p + lift1(τ_u2,-1)@er
-τ_u = lift(τ_u1, -1) + lift(τ_u2, -2) #+ τ_L/Ekman
+τ_u = lift(τ_u1, -1) + lift(τ_u2, -2) + τ_L/Ekman
 τ_T = lift(τ_T1, -1) + lift(τ_T2, -2)
 
 vars = [p, T, u]
-taus = [τ_p, τ_T1, τ_T2, τ_u1, τ_u2]#, τ_L]
+taus = [τ_p, τ_T1, τ_T2, τ_u1, τ_u2, τ_L]
 # Problem
 problem = de.IVP(vars + taus, namespace=locals())
 problem.add_equation("div(u) + τ_d = 0")
 problem.add_equation("dt(T) - lap(T)/Prandtl + τ_T = -(u@grad(T))")
 problem.add_equation("dt(u) - lap(u) + grad(p)/Ekman - Rayleigh*rvec*T/Ekman + τ_u = cross(u, curl(u) + f)")
-# problem.add_equation((L_cons_ncc*u, 0))
-# eq = problem.equations[-1]
-# eq['LHS'].valid_modes[2] *= mask
-# eq['LHS'].valid_modes[0] = False
-# eq['LHS'].valid_modes[1] = False
-
+problem.add_equation((L_cons_ncc*u, 0))
+eq = problem.equations[-1]
+eq["valid_modes"][0] = False
+eq["valid_modes"][1] = False
+eq["valid_modes"][2] *= mask
 problem.add_equation("T(r=Ri) = 1")
 problem.add_equation("radial(u(r=Ri)) = 0")
 problem.add_equation("radial(angular(e(r=Ri))) = 0")
@@ -205,6 +204,7 @@ div = lambda A: de.Divergence(A, index=0)
 curl = lambda A: de.Curl(A)
 shellavg = lambda A: de.Average(A, coords.S2coordsys)
 volavg = lambda A: de.integ(A)/V
+avg = lambda A: de.integ(A)/V
 integ = lambda A: de.integ(A)
 
 L = cross(rvec, u)*Ekman
@@ -242,6 +242,10 @@ traces.add_task(integ(dot(L,ez)), name='Lz')
 traces.add_task(integ(-x*div(L)), name='Λx')
 traces.add_task(integ(-y*div(L)), name='Λy')
 traces.add_task(integ(-z*div(L)), name='Λz')
+traces.add_task(np.sqrt(avg(div(u)**2)), name='divu')
+traces.add_task(np.sqrt(avg(τ_d**2)), name='τ_d')
+traces.add_task(np.sqrt(avg(τ_T**2)), name='τ_T')
+traces.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
 
 # CFL
 if args['--max_dt']:
