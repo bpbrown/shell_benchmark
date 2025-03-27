@@ -15,6 +15,8 @@ Options:
     --max_dt=<max_dt>       Largest timestep
     --end_time=<end_time>   End of simulation, diffusion times [default: 3]
 
+    --no-output             Suppress all disk output (for performance testing)
+
     --label=<label>         Additional label for run output directory
 """
 import sys
@@ -173,38 +175,39 @@ L = cross(rvec, u)*Ekman
 ω = curl(u)*Ekman/2
 PE = Rayleigh/Ekman*T
 
-snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=5e-1, max_writes=10)
-snapshots.add_task(T(r=Ro), scales=dealias, name='T_r_outer')
-snapshots.add_task(T(r=Ri), scales=dealias, name='T_r_inner')
-snapshots.add_task(T(r=(Ri+Ro)/2), scales=dealias, name='T_r_mid')
-snapshots.add_task(T(phi=0), scales=dealias, name='T_phi_start')
-snapshots.add_task(T(phi=3*np.pi/2), scales=dealias, name='T_phi_end')
+if not args['--no-output']:
+    snapshots = solver.evaluator.add_file_handler(data_dir+'/slices', sim_dt=5e-1, max_writes=10)
+    snapshots.add_task(T(r=Ro), scales=dealias, name='T_r_outer')
+    snapshots.add_task(T(r=Ri), scales=dealias, name='T_r_inner')
+    snapshots.add_task(T(r=(Ri+Ro)/2), scales=dealias, name='T_r_mid')
+    snapshots.add_task(T(phi=0), scales=dealias, name='T_phi_start')
+    snapshots.add_task(T(phi=3*np.pi/2), scales=dealias, name='T_phi_end')
 
-profiles = solver.evaluator.add_file_handler(data_dir+'/profiles', sim_dt=out_cadence, max_writes=None)
-profiles.add_task(u(r=(Ri+Ro)/2,theta=np.pi/2), name='u_profile')
-profiles.add_task(T(r=(Ri+Ro)/2,theta=np.pi/2), name='T_profile')
+    profiles = solver.evaluator.add_file_handler(data_dir+'/profiles', sim_dt=out_cadence, max_writes=None)
+    profiles.add_task(u(r=(Ri+Ro)/2,theta=np.pi/2), name='u_profile')
+    profiles.add_task(T(r=(Ri+Ro)/2,theta=np.pi/2), name='T_profile')
 
-traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=out_cadence, max_writes=None)
-traces.add_task(0.5*volavg(u@u), name='KE')
-traces.add_task(volavg(PE), name='PE')
-traces.add_task(np.sqrt(volavg(u@u)), name='Re')
-traces.add_task(np.sqrt(volavg(ω@ω)), name='Ro')
-traces.add_task(np.abs(τ_p), name='τ_p')
-traces.add_task(shellavg(np.abs(τ_T1)), name='τ_S1')
-traces.add_task(shellavg(np.abs(τ_T2)), name='τ_S2')
-traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
-traces.add_task(shellavg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
-traces.add_task(shellavg(np.sqrt(dot(τ_L,τ_L))), name='τ_L')
-traces.add_task(integ(dot(L,ex)), name='Lx')
-traces.add_task(integ(dot(L,ey)), name='Ly')
-traces.add_task(integ(dot(L,ez)), name='Lz')
-traces.add_task(integ(-x*div(L)), name='Λx')
-traces.add_task(integ(-y*div(L)), name='Λy')
-traces.add_task(integ(-z*div(L)), name='Λz')
-traces.add_task(np.sqrt(avg(div(u)**2)), name='divu')
-traces.add_task(np.sqrt(avg(τ_d**2)), name='τ_d')
-traces.add_task(np.sqrt(avg(τ_T**2)), name='τ_T')
-traces.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
+    traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=out_cadence, max_writes=None)
+    traces.add_task(0.5*volavg(u@u), name='KE')
+    traces.add_task(volavg(PE), name='PE')
+    traces.add_task(np.sqrt(volavg(u@u)), name='Re')
+    traces.add_task(np.sqrt(volavg(ω@ω)), name='Ro')
+    traces.add_task(np.abs(τ_p), name='τ_p')
+    traces.add_task(shellavg(np.abs(τ_T1)), name='τ_S1')
+    traces.add_task(shellavg(np.abs(τ_T2)), name='τ_S2')
+    traces.add_task(shellavg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
+    traces.add_task(shellavg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
+    traces.add_task(shellavg(np.sqrt(dot(τ_L,τ_L))), name='τ_L')
+    traces.add_task(integ(dot(L,ex)), name='Lx')
+    traces.add_task(integ(dot(L,ey)), name='Ly')
+    traces.add_task(integ(dot(L,ez)), name='Lz')
+    traces.add_task(integ(-x*div(L)), name='Λx')
+    traces.add_task(integ(-y*div(L)), name='Λy')
+    traces.add_task(integ(-z*div(L)), name='Λz')
+    traces.add_task(np.sqrt(avg(div(u)**2)), name='divu')
+    traces.add_task(np.sqrt(avg(τ_d**2)), name='τ_d')
+    traces.add_task(np.sqrt(avg(τ_T**2)), name='τ_T')
+    traces.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
 
 
 # CFL
