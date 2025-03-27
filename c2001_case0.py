@@ -15,6 +15,8 @@ Options:
     --max_dt=<max_dt>       Largest timestep
     --end_time=<end_time>   End of simulation, diffusion times [default: 3]
 
+    --timestepper=<ts>      Timestepper to use [default: SBDF4]
+
     --no-output             Suppress all disk output (for performance testing)
 
     --label=<label>         Additional label for run output directory
@@ -66,7 +68,14 @@ logger.info("saving data in {}".format(data_dir))
 import dedalus.tools.logging as dedalus_logging
 dedalus_logging.add_file_handler(data_dir+'/logs/dedalus_log', 'DEBUG')
 
-timestepper = de.SBDF4 #de.RK222
+ts = args['--timestepper']
+if ts == "RK222":
+    timestepper = de.RK222
+elif ts == "SBDF2":
+    timestepper = de.SBDF2
+else:
+    timestepper = de.SBDF4
+logger.info(f'using timestepper {ts} ({timestepper})')
 dealias = 3/2
 dtype = np.float64
 
